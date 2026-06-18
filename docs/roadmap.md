@@ -19,9 +19,12 @@ Pure, synchronous, sans-IO core, tested (35 tests, clippy+fmt clean), one dep (`
 
 The two pre-driver core seams have landed (audit #1 byte/framing `fa6483d`, #2 EOF/teardown
 `d807525`): `Engine::feed(&[u8])` frames the raw stream, `Engine::on_eof()` drains waiters.
-Next: the **`blocking` driver** (`spawn`/`command`/events-as-`Receiver`/typed helpers) over
-the engine. Lower-ranked audit items (#3–#6) and: version guard, transcript regression net,
-publishing.
+The **`blocking` driver** transport core has landed (`2c6eba9`): `Client::with_transport`,
+a reader thread over `Engine::feed`, `command()` blocking on a per-command channel, events
+as a `Receiver`, EOF/`Disconnected` teardown — unit-tested over a `UnixStream` pair.
+Next: driver **Slice B** (`spawn` real tmux — needs a `child: Option<Child>` field — plus
+`send_keys`/`resize` typed helpers), the open audit guards (below), then version guard,
+transcript regression net, publishing.
 
 ## Audit 1 — fix-slices (2026-06-18)
 
@@ -56,6 +59,34 @@ discards the id header (document as intentional or capture); subscription `name`
 spaces. Declined: restructuring `Reply.error: bool` into a sum type — the parser frames
 blocks, command-semantics `Result` belongs to the engine; bool at the parser layer is correct
 layering (rationale recorded here).
+
+## Audit 2 — fix-slices (2026-06-18, post byte-refactor + blocking driver)
+
+Concurrency verdict: **`command()` cannot hang** — every interleaving verified (the
+`connected` flag + single-lock register/write/drain serialization rule out an orphaned
+waiter; the events channel is unbounded so the lock is never held across a blocking send).
+Sans-IO boundary re-confirmed clean (`--no-default-features` builds the pure core). N3 (a
+claimed `decode_output` off-by-one) was a **false positive** — disproven by two agents + a
+regression test (`b25ca60`).
+
+- **A2-1. Blank lines inside reply blocks dropped (BLOCKER). — DONE (`5bff98a`).** `feed`'s
+  empty-line skip ran beneath block buffering; moved the top-level-only skip into the parser.
+- **A2-2. `command()` panicked on a poisoned lock. — DONE (`77f40c8`).** Now returns
+  `Disconnected` if the reader thread panicked.
+- **A2-3. `ExtendedOutput.ms_behind` `u32` → `u64`.** tmux's age is `%llu`; `u32` overflows
+  (~49 days of ms) and loses the line to `Unknown`. **Pinned `Notification` field — hangar
+  sign-off pending.**
+- **A2-4. `child: Option<Child>` on `Client`.** `spawn` must hold and reap the tmux child or
+  it orphans a zombie. Lands with driver Slice B.
+- Carryover, still open: **#3 desync tripwire**, **#4 unterminated-block guard** (both pure,
+  unblocked — next slices), **#5 `WindowFlags`** (pin pressure — hangar sign-off pending),
+  **#6 dead `Error::Io`/`Command`/`Exit`** (confirmed dead, sans-IO settled it — hangar
+  sign-off pending; consider `#[non_exhaustive] Error`).
+- Nits: write-failure leaves an orphaned id in `pending` (harmless, `on_eof` drains it).
+
+Async-driver note (for the future `tokio`/`smol` slice): `blocking`'s single `Mutex<Shared>`
+is held across `writer.write_all`, which won't survive `.await` — an async driver needs an
+async-aware mutex or a dedicated writer task, not a verbatim reuse of `Shared`.
 
 ## Phase 0 — Complete notification coverage — DONE
 
