@@ -13,11 +13,20 @@ categories = ["api-bindings", "parser-implementations"]
 [features]
 default = ["blocking"]
 # Runtime drivers wrapping the sans-IO core. `blocking` is std-only (no extra deps);
-# `tokio`/`smol` arrive later behind their own optional deps.
+# `tokio`/`smol` are opt-in behind their own optional deps, so the default build
+# stays dependency-light.
 blocking = []
+tokio = ["dep:tokio"]
 
 [dependencies]
 thiserror = "2"
+tokio = { version = "1", optional = true, features = [
+    "rt",
+    "macros",
+    "io-util",
+    "process",
+    "sync",
+] }
 
 [profile.test]
 debug = "line-tables-only"

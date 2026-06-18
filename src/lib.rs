@@ -28,14 +28,24 @@ mod ids;
 mod notification;
 mod output;
 
+#[cfg(any(feature = "blocking", feature = "tokio"))]
+mod commands;
+#[cfg(any(feature = "blocking", feature = "tokio"))]
+mod spawn;
+
 #[cfg(feature = "blocking")]
 mod blocking;
+#[cfg(feature = "tokio")]
+mod tokio_rt;
 
 pub mod layout;
 pub mod parser;
 
+#[cfg(any(feature = "blocking", feature = "tokio"))]
+pub use spawn::SpawnOpts;
+
 #[cfg(feature = "blocking")]
-pub use blocking::{Client, SpawnOpts};
+pub use blocking::Client;
 pub use engine::{CommandError, CommandId, CommandOutput, Engine, Incoming};
 pub use error::{Error, Result};
 pub use ids::{PaneId, SessionId, WindowId};
@@ -43,3 +53,5 @@ pub use layout::Layout;
 pub use notification::{Notification, WindowFlags};
 pub use output::decode_output;
 pub use parser::{Event, Parser, Reply};
+#[cfg(feature = "tokio")]
+pub use tokio_rt::TokioClient;

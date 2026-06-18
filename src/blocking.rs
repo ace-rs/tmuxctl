@@ -14,32 +14,11 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
+use crate::commands;
 use crate::engine::{CommandError, CommandId, CommandOutput, Engine, Incoming};
 use crate::ids::PaneId;
 use crate::notification::Notification;
-
-/// How to spawn the `tmux -C` control client. `Default` runs `tmux -C new-session -A`
-/// (attach-or-create the default session) on the default server.
-#[derive(Debug, Clone)]
-#[non_exhaustive]
-pub struct SpawnOpts {
-    /// The tmux binary to run.
-    pub program: String,
-    /// Server socket name for `-L` (isolation); `None` uses tmux's default server.
-    pub socket: Option<String>,
-    /// Session for `-s` (with `new-session -A`, attach-or-create); `None` leaves it unnamed.
-    pub session: Option<String>,
-}
-
-impl Default for SpawnOpts {
-    fn default() -> Self {
-        Self {
-            program: "tmux".to_string(),
-            socket: None,
-            session: None,
-        }
-    }
-}
+use crate::spawn::SpawnOpts;
 
 /// The outcome of a command: tmux's output, or why it failed.
 type CommandResult = Result<CommandOutput, CommandError>;
@@ -77,14 +56,8 @@ impl Client {
     /// the child exits and is reaped.
     pub fn spawn(opts: SpawnOpts) -> std::io::Result<Client> {
         let mut command = Command::new(&opts.program);
-        if let Some(socket) = &opts.socket {
-            command.arg("-L").arg(socket);
-        }
-        command.arg("-C").arg("new-session").arg("-A");
-        if let Some(session) = &opts.session {
-            command.arg("-s").arg(session);
-        }
         command
+            .args(opts.argv())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
@@ -159,20 +132,15 @@ impl Client {
         rx.recv().unwrap_or(Err(CommandError::Disconnected))
     }
 
-    /// Send raw bytes to a pane as key input. Uses `send-keys -H` (hex byte values),
-    /// the safe path for arbitrary bytes and control sequences — no key-name lookup.
+    /// Send raw bytes to a pane as key input (hex byte values — safe for arbitrary
+    /// bytes and control sequences, no key-name lookup).
     pub fn send_keys(&self, pane: PaneId, keys: &[u8]) -> Result<(), CommandError> {
-        let mut cmd = format!("send-keys -t %{} -H", pane.0);
-        for byte in keys {
-            cmd.push_str(&format!(" {byte:02x}"));
-        }
-        self.command(&cmd).map(drop)
+        self.command(&commands::send_keys(pane, keys)).map(drop)
     }
 
-    /// Set this control client's size via `refresh-client -C <cols>x<rows>`.
+    /// Set this control client's size.
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), CommandError> {
-        self.command(&format!("refresh-client -C {cols}x{rows}"))
-            .map(drop)
+        self.command(&commands::resize(cols, rows)).map(drop)
     }
 }
 
