@@ -34,9 +34,11 @@ next, in rough order:
    code-complete but smoke-untested.
 2. **Transcript regression net** (Phase 5) — `Engine::feed(&[u8]) -> Vec<Incoming>` is the
    right replay seam; pairs with the `smoke` skill.
-3. **`tokio`/`smol` drivers** — note: don't reuse `blocking`'s `Mutex<Shared>` verbatim (held
-   across `write_all`, won't survive `.await`).
-4. **Version guard** (lock-step) and **publishing**.
+3. **`smol` driver** — `tokio` is DONE (`TokioClient`, `2bbc518`, actor pattern, behind the
+   `tokio` feature). `smol` mirrors it on `async-process`/`futures-lite`/`async-channel`; same
+   actor shape. Reuse the shared `spawn`/`commands` modules. Don't copy `blocking`'s
+   `Mutex<Shared>` (held across a write — won't survive `.await`).
+4. **Version guard** (lock-step ADR — write the `TARGET_TMUX` pin) and **publishing**.
 
 Audit 3 is due after ~2–3 more feature slices.
 

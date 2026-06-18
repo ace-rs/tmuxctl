@@ -118,7 +118,13 @@ Landed end-to-end: the pure correlation `Engine`, then the `blocking` `Client` (
 stdin/stdout, holds/reaps the child; `command()` blocks on a per-command channel; events are
 a `Receiver<Notification>`; teardown detaches on an empty line and treats EOF/`Disconnected`
 as session end; `%error` → `Err(CommandError::Failed)`. Reply correlation is positional FIFO
-with a monotonic-number tripwire. Open: the `tokio`/`smol` drivers (see the async note above).
+with a monotonic-number tripwire.
+
+The **`tokio` driver** (`TokioClient`) has landed too (`2bbc518`) behind the `tokio` feature —
+actor pattern (owner task `select!`s commands vs. stdout; no lock across `.await`), tested
+over `tokio::io::duplex`. Shared `SpawnOpts`/argv (`spawn.rs`) and command-string builders
+(`commands.rs`) keep the two drivers DRY. **Open: the `smol` driver** (mirrors `TokioClient`
+on `async-process`/`futures-lite`).
 
 ## Phase 3 — Typed command helpers (partial)
 
