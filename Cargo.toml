@@ -1,0 +1,17 @@
+[package]
+name = "tmuxctl"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+description = "A bidirectional tmux control-mode (tmux -C) client: typed notification stream, command reply correlation, pane-output decoding, and layout-tree parsing."
+repository = "https://github.com/ace-rs/tmux-rs"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["tmux", "control-mode", "terminal", "multiplexer"]
+categories = ["api-bindings", "parser-implementations"]
+
+[dependencies]
+thiserror = "2"
+
+[profile.test]
+debug = "line-tables-only"

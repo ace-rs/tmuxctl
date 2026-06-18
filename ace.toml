@@ -1,0 +1,12 @@
+school = "prod9/school"
+
+# Team-wide skill set for this crate. Personal additions go in ace.local.toml.
+# ace-* workflow skills come from the user-level include.
+skills = [
+  "general-coding",
+  "rust-coding",
+  "markdown-writing",
+  "shell",
+  "smoke",
+  "issue-creator",
+]
