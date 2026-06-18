@@ -125,11 +125,23 @@ fn parse_notification(line: &str) -> Notification {
         "output" => parse_output(args),
         "extended-output" => parse_extended_output(args),
         "layout-change" => parse_layout_change(args),
+
         "window-add" => first_window(args).map(Notification::WindowAdd),
         "window-close" => first_window(args).map(Notification::WindowClose),
-        "window-renamed" => parse_renamed(args, Renamed::Window),
-        "session-changed" => parse_renamed(args, Renamed::Session),
+        "window-renamed" => parse_id_name(args, window_id, Notification::WindowRenamed),
+        "window-pane-changed" => parse_window_pane_changed(args),
+        "unlinked-window-add" => first_window(args).map(Notification::UnlinkedWindowAdd),
+        "unlinked-window-close" => first_window(args).map(Notification::UnlinkedWindowClose),
+        "unlinked-window-renamed" => {
+            parse_id_name(args, window_id, Notification::UnlinkedWindowRenamed)
+        }
+
+        "session-changed" => parse_id_name(args, session_id, Notification::SessionChanged),
+        "session-renamed" => parse_id_name(args, session_id, Notification::SessionRenamed),
+        "session-window-changed" => parse_session_window_changed(args),
+        "client-session-changed" => parse_client_session_changed(args),
         "sessions-changed" => Some(Notification::SessionsChanged),
+
         "pane-mode-changed" => first_pane(args).map(Notification::PaneModeChanged),
         "pause" => first_pane(args).map(Notification::Pause),
         "continue" => first_pane(args).map(Notification::Continue),
@@ -163,32 +175,61 @@ fn parse_extended_output(args: &str) -> Option<Notification> {
     })
 }
 
-// `%layout-change @<win> <layout> [<visible-layout> <flags>]`
+// `%layout-change @<win> <layout> [<visible-layout> <flags>]`. Layout strings hold
+// no spaces, so a plain space split cleanly separates the up-to-four fields. An
+// unparseable visible-layout fails the whole line to `Unknown` so drift surfaces.
 fn parse_layout_change(args: &str) -> Option<Notification> {
     let mut parts = args.split(' ');
     let window = window_id(parts.next()?)?;
     let layout = Layout::parse(parts.next()?).ok()?;
-    Some(Notification::LayoutChange { window, layout })
+    let visible_layout = parts.next().map(Layout::parse).transpose().ok()?;
+    let flags = parts.next().map(|s| s.to_string());
+    Some(Notification::LayoutChange {
+        window,
+        layout,
+        visible_layout,
+        flags,
+    })
 }
 
-enum Renamed {
-    Window,
-    Session,
+// `%window-pane-changed @<win> %<pane>`
+fn parse_window_pane_changed(args: &str) -> Option<Notification> {
+    let (window, pane) = args.split_once(' ')?;
+    Some(Notification::WindowPaneChanged {
+        window: window_id(window)?,
+        pane: pane_id(pane)?,
+    })
 }
 
-// `%window-renamed @<win> <name>` / `%session-changed $<sess> <name>`
-fn parse_renamed(args: &str, which: Renamed) -> Option<Notification> {
+// `%session-window-changed $<sess> @<win>`
+fn parse_session_window_changed(args: &str) -> Option<Notification> {
+    let (session, window) = args.split_once(' ')?;
+    Some(Notification::SessionWindowChanged {
+        session: session_id(session)?,
+        window: window_id(window)?,
+    })
+}
+
+// `%client-session-changed <client> $<sess> <name>`
+fn parse_client_session_changed(args: &str) -> Option<Notification> {
+    let (client, rest) = args.split_once(' ')?;
+    let (session, name) = rest.split_once(' ')?;
+    Some(Notification::ClientSessionChanged {
+        client: client.to_string(),
+        session: session_id(session)?,
+        name: name.to_string(),
+    })
+}
+
+// The `<id> <name>` shape shared by the `*-renamed` and `session-changed` lines:
+// parse the sigil'd id, take the remainder as the name, build the variant.
+fn parse_id_name<I>(
+    args: &str,
+    parse_id: fn(&str) -> Option<I>,
+    build: fn(I, String) -> Notification,
+) -> Option<Notification> {
     let (id, name) = args.split_once(' ')?;
-    match which {
-        Renamed::Window => Some(Notification::WindowRenamed(
-            window_id(id)?,
-            name.to_string(),
-        )),
-        Renamed::Session => Some(Notification::SessionChanged(
-            session_id(id)?,
-            name.to_string(),
-        )),
-    }
+    Some(build(parse_id(id)?, name.to_string()))
 }
 
 // `%subscription-changed <name> <session> <window> <pane> : <value>` — the
@@ -317,6 +358,103 @@ mod tests {
             panic!("expected a layout change");
         };
         assert_eq!(*window, WindowId(0));
+    }
+
+    #[test]
+    fn parses_window_pane_changed() {
+        let events = drain(&["%window-pane-changed @2 %5"]);
+        assert_eq!(
+            events,
+            vec![Event::Notification(Notification::WindowPaneChanged {
+                window: WindowId(2),
+                pane: PaneId(5),
+            })]
+        );
+    }
+
+    #[test]
+    fn parses_unlinked_window_lines() {
+        let events = drain(&[
+            "%unlinked-window-add @7",
+            "%unlinked-window-close @7",
+            "%unlinked-window-renamed @7 other",
+        ]);
+        assert_eq!(
+            events,
+            vec![
+                Event::Notification(Notification::UnlinkedWindowAdd(WindowId(7))),
+                Event::Notification(Notification::UnlinkedWindowClose(WindowId(7))),
+                Event::Notification(Notification::UnlinkedWindowRenamed(
+                    WindowId(7),
+                    "other".to_string()
+                )),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_session_renamed_and_window_changed() {
+        let events = drain(&["%session-renamed $1 work", "%session-window-changed $1 @4"]);
+        assert_eq!(
+            events,
+            vec![
+                Event::Notification(Notification::SessionRenamed(
+                    SessionId(1),
+                    "work".to_string()
+                )),
+                Event::Notification(Notification::SessionWindowChanged {
+                    session: SessionId(1),
+                    window: WindowId(4),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_client_session_changed() {
+        let events = drain(&["%client-session-changed /dev/ttys003 $2 main"]);
+        assert_eq!(
+            events,
+            vec![Event::Notification(Notification::ClientSessionChanged {
+                client: "/dev/ttys003".to_string(),
+                session: SessionId(2),
+                name: "main".to_string(),
+            })]
+        );
+    }
+
+    #[test]
+    fn layout_change_carries_visible_layout_and_flags() {
+        // Bare (checksum-less) layouts so the test needn't precompute checksums.
+        let events =
+            drain(&["%layout-change @1 159x48,0,0{79x48,0,0,0,79x48,80,0,1} 159x48,0,0,0 *Z"]);
+        let Event::Notification(Notification::LayoutChange {
+            window,
+            visible_layout,
+            flags,
+            ..
+        }) = &events[0]
+        else {
+            panic!("expected a layout change");
+        };
+        assert_eq!(*window, WindowId(1));
+        assert!(visible_layout.is_some());
+        assert_eq!(flags.as_deref(), Some("*Z"));
+    }
+
+    #[test]
+    fn layout_change_without_visible_layout_is_back_compatible() {
+        let events = drain(&["%layout-change @0 159x48,0,0{79x48,0,0,0,79x48,80,0,1}"]);
+        let Event::Notification(Notification::LayoutChange {
+            visible_layout,
+            flags,
+            ..
+        }) = &events[0]
+        else {
+            panic!("expected a layout change");
+        };
+        assert!(visible_layout.is_none());
+        assert!(flags.is_none());
     }
 
     #[test]

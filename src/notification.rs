@@ -20,8 +20,15 @@ pub enum Notification {
         bytes: Vec<u8>,
     },
 
-    /// `%layout-change @<win> <layout> …` — a window's layout changed.
-    LayoutChange { window: WindowId, layout: Layout },
+    /// `%layout-change @<win> <layout> [<visible-layout> <flags>]` — a window's
+    /// layout changed. `visible_layout` diverges from `layout` under zoom; both it
+    /// and `flags` (raw window flags) are absent on tmux too old to report them.
+    LayoutChange {
+        window: WindowId,
+        layout: Layout,
+        visible_layout: Option<Layout>,
+        flags: Option<String>,
+    },
 
     /// `%window-add @<win>` — a window was created in the attached session.
     WindowAdd(WindowId),
@@ -29,9 +36,32 @@ pub enum Notification {
     WindowClose(WindowId),
     /// `%window-renamed @<win> <name>` — a window was renamed.
     WindowRenamed(WindowId, String),
+    /// `%window-pane-changed @<win> %<pane>` — a window's active pane changed.
+    WindowPaneChanged { window: WindowId, pane: PaneId },
+
+    /// `%unlinked-window-add @<win>` — a window was created in *another* session.
+    UnlinkedWindowAdd(WindowId),
+    /// `%unlinked-window-close @<win>` — an unlinked window was closed.
+    UnlinkedWindowClose(WindowId),
+    /// `%unlinked-window-renamed @<win> <name>` — an unlinked window was renamed.
+    UnlinkedWindowRenamed(WindowId, String),
 
     /// `%session-changed $<sess> <name>` — the attached session changed.
     SessionChanged(SessionId, String),
+    /// `%session-renamed $<sess> <name>` — a session was renamed.
+    SessionRenamed(SessionId, String),
+    /// `%session-window-changed $<sess> @<win>` — a session's active window changed.
+    SessionWindowChanged {
+        session: SessionId,
+        window: WindowId,
+    },
+    /// `%client-session-changed <client> $<sess> <name>` — another client's session
+    /// changed (`<client>` is the client name, e.g. its tty path — no sigil).
+    ClientSessionChanged {
+        client: String,
+        session: SessionId,
+        name: String,
+    },
     /// `%sessions-changed` — a session was created or destroyed.
     SessionsChanged,
 
