@@ -8,7 +8,12 @@ use crate::layout::Layout;
 /// Output payloads are already octal-decoded ([`crate::decode_output`]); unknown
 /// `%…` lines are preserved verbatim in [`Notification::Unknown`] for
 /// forward-compatibility rather than dropped.
+///
+/// `#[non_exhaustive]`: tmux's notification surface grows across versions, so
+/// consumers must carry a catch-all arm (they already do, for [`Notification::Unknown`])
+/// and a new variant in a minor release is not a breaking change.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Notification {
     /// `%output %<pane> <data>` — pane output, decoded to raw bytes.
     Output { pane: PaneId, bytes: Vec<u8> },
