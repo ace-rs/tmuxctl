@@ -77,6 +77,15 @@ mod tests {
     }
 
     #[test]
+    fn trailing_escape_at_end_of_input_decodes() {
+        // A complete `\ooo` as the final four bytes must decode — the `i + 3 < len`
+        // bound admits it (last digit at len-1). Regression guard against an
+        // off-by-one misreading of that bound.
+        assert_eq!(decode_output(br"\033"), vec![0x1b]);
+        assert_eq!(decode_output(br"x\000"), vec![b'x', 0x00]);
+    }
+
+    #[test]
     fn high_bytes_pass_through_verbatim() {
         // A lone 0xFF and a UTF-8 multibyte (é = 0xC3 0xA9) survive unchanged —
         // exactly the bytes a &str line type would corrupt.
