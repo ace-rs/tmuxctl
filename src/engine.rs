@@ -52,12 +52,13 @@ pub enum Incoming {
     },
 }
 
-/// The sans-IO protocol core: parser + outstanding-command FIFO.
+/// The sans-IO protocol core: parser + outstanding-command FIFO + framing buffer.
 #[derive(Debug, Default)]
 pub struct Engine {
     parser: Parser,
     pending: VecDeque<CommandId>,
     next_id: u64,
+    buf: Vec<u8>,
 }
 
 impl Engine {
@@ -74,11 +75,31 @@ impl Engine {
         id
     }
 
-    /// Feed one control-mode line (newline stripped). Returns an [`Incoming`] when
+    /// Feed a raw chunk of the tmux byte stream. Frames complete lines on `\n`,
+    /// buffering any partial trailing line until the next call, and returns the
+    /// correlated outcomes in order. This is the driver's entry point — it owns the
+    /// `read()` loop and hands chunks here; empty lines are skipped.
+    pub fn feed(&mut self, bytes: &[u8]) -> Vec<Incoming> {
+        self.buf.extend_from_slice(bytes);
+
+        let mut out = Vec::new();
+        while let Some(newline) = self.buf.iter().position(|&b| b == b'\n') {
+            let mut line: Vec<u8> = self.buf.drain(..=newline).collect();
+            line.pop(); // drop the trailing '\n'
+            if !line.is_empty()
+                && let Some(incoming) = self.on_line(&line)
+            {
+                out.push(incoming);
+            }
+        }
+        out
+    }
+
+    /// Feed one already-framed line (newline stripped). Returns an [`Incoming`] when
     /// a notification parses or a reply block closes; `None` while buffering a
     /// block's content, for a server-internal reply, or for a control reply with no
     /// outstanding command to correlate it to.
-    pub fn on_line(&mut self, line: &str) -> Option<Incoming> {
+    pub fn on_line(&mut self, line: &[u8]) -> Option<Incoming> {
         match self.parser.push(line)? {
             Event::Notification(notification) => Some(Incoming::Notification(notification)),
             Event::Reply(reply) => self.correlate(reply),
@@ -111,7 +132,7 @@ mod tests {
     #[test]
     fn notification_passes_through() {
         let mut engine = Engine::new();
-        let incoming = engine.on_line("%sessions-changed");
+        let incoming = engine.on_line(b"%sessions-changed");
         assert_eq!(
             incoming,
             Some(Incoming::Notification(Notification::SessionsChanged))
@@ -123,9 +144,9 @@ mod tests {
         let mut engine = Engine::new();
         let id = engine.register_command();
 
-        assert_eq!(engine.on_line("%begin 1 10 1"), None);
-        assert_eq!(engine.on_line("out"), None);
-        let done = engine.on_line("%end 1 10 1");
+        assert_eq!(engine.on_line(b"%begin 1 10 1"), None);
+        assert_eq!(engine.on_line(b"out"), None);
+        let done = engine.on_line(b"%end 1 10 1");
 
         assert_eq!(
             done,
@@ -143,9 +164,9 @@ mod tests {
         let mut engine = Engine::new();
         let id = engine.register_command();
 
-        engine.on_line("%begin 1 11 1");
-        engine.on_line("no such window");
-        let done = engine.on_line("%error 1 11 1");
+        engine.on_line(b"%begin 1 11 1");
+        engine.on_line(b"no such window");
+        let done = engine.on_line(b"%error 1 11 1");
 
         assert_eq!(
             done,
@@ -164,10 +185,10 @@ mod tests {
         let first = engine.register_command();
         let second = engine.register_command();
 
-        engine.on_line("%begin 1 20 1");
-        let a = engine.on_line("%end 1 20 1");
-        engine.on_line("%begin 1 21 1");
-        let b = engine.on_line("%end 1 21 1");
+        engine.on_line(b"%begin 1 20 1");
+        let a = engine.on_line(b"%end 1 20 1");
+        engine.on_line(b"%begin 1 21 1");
+        let b = engine.on_line(b"%end 1 21 1");
 
         assert!(matches!(a, Some(Incoming::Reply { id, .. }) if id == first));
         assert!(matches!(b, Some(Incoming::Reply { id, .. }) if id == second));
@@ -180,12 +201,12 @@ mod tests {
         let mut engine = Engine::new();
         let id = engine.register_command();
 
-        engine.on_line("%begin 1 30 0");
-        let internal = engine.on_line("%end 1 30 0");
+        engine.on_line(b"%begin 1 30 0");
+        let internal = engine.on_line(b"%end 1 30 0");
         assert_eq!(internal, None);
 
-        engine.on_line("%begin 1 31 1");
-        let ours = engine.on_line("%end 1 31 1");
+        engine.on_line(b"%begin 1 31 1");
+        let ours = engine.on_line(b"%end 1 31 1");
         assert!(matches!(ours, Some(Incoming::Reply { id: got, .. }) if got == id));
     }
 
@@ -194,14 +215,14 @@ mod tests {
         let mut engine = Engine::new();
         let id = engine.register_command();
 
-        let note = engine.on_line("%window-add @3");
+        let note = engine.on_line(b"%window-add @3");
         assert_eq!(
             note,
             Some(Incoming::Notification(Notification::WindowAdd(WindowId(3))))
         );
 
-        engine.on_line("%begin 1 40 1");
-        let done = engine.on_line("%end 1 40 1");
+        engine.on_line(b"%begin 1 40 1");
+        let done = engine.on_line(b"%end 1 40 1");
         assert!(matches!(done, Some(Incoming::Reply { id: got, .. }) if got == id));
     }
 
@@ -209,9 +230,33 @@ mod tests {
     fn control_reply_without_pending_is_dropped() {
         let mut engine = Engine::new();
 
-        engine.on_line("%begin 1 50 1");
-        let orphan = engine.on_line("%end 1 50 1");
+        engine.on_line(b"%begin 1 50 1");
+        let orphan = engine.on_line(b"%end 1 50 1");
 
         assert_eq!(orphan, None);
+    }
+
+    #[test]
+    fn feed_frames_lines_across_chunk_boundaries() {
+        // A notification split mid-line across two feeds, with a raw 0xFF byte in a
+        // following %output payload that straddles a third chunk — the framer must
+        // reassemble both and preserve the non-UTF-8 byte.
+        let mut engine = Engine::new();
+
+        assert!(engine.feed(b"%sessions-chan").is_empty()); // partial line, buffered
+        let first = engine.feed(b"ged\n%output %1 ab");
+        assert_eq!(
+            first,
+            vec![Incoming::Notification(Notification::SessionsChanged)]
+        );
+
+        let second = engine.feed(&[0xff, b'\n']); // completes the %output line
+        assert_eq!(
+            second,
+            vec![Incoming::Notification(Notification::Output {
+                pane: crate::ids::PaneId(1),
+                bytes: vec![b'a', b'b', 0xff],
+            })]
+        );
     }
 }

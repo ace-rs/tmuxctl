@@ -53,13 +53,26 @@ impl Parser {
         Self::default()
     }
 
-    /// Feed one line. Returns an [`Event`] when a notification is parsed or a
-    /// reply block closes; returns `None` while buffering a block's content or
-    /// opening a new block.
-    pub fn push(&mut self, line: &str) -> Option<Event> {
+    /// Feed one line (the framing `\n` already stripped). Returns an [`Event`] when
+    /// a notification is parsed or a reply block closes; `None` while buffering a
+    /// block's content or opening a new block.
+    ///
+    /// `%output` / `%extended-output` carry raw bytes (`>= 0x80` verbatim) and only
+    /// ever appear at top level, so they are decoded on the byte path before any
+    /// UTF-8 conversion. Every other line — guards, the text notifications, reply
+    /// content — is treated as UTF-8 (lossily, so a stray non-UTF-8 line degrades to
+    /// `Notification::Unknown` rather than panicking).
+    pub fn push(&mut self, line: &[u8]) -> Option<Event> {
+        if self.pending.is_none()
+            && let Some(notification) = parse_output_line(line)
+        {
+            return Some(Event::Notification(notification));
+        }
+
+        let text = String::from_utf8_lossy(line);
         match self.pending.is_some() {
-            true => self.push_within_block(line),
-            false => self.push_at_top_level(line),
+            true => self.push_within_block(&text),
+            false => self.push_at_top_level(&text),
         }
     }
 
@@ -146,8 +159,6 @@ fn parse_notification(line: &str) -> Notification {
     let (kind, args) = rest.split_once(' ').unwrap_or((rest, ""));
 
     let parsed = match kind {
-        "output" => parse_output(args),
-        "extended-output" => parse_extended_output(args),
         "layout-change" => parse_layout_change(args),
 
         "window-add" => first_window(args).map(Notification::WindowAdd),
@@ -176,27 +187,61 @@ fn parse_notification(line: &str) -> Notification {
     parsed.unwrap_or_else(unknown)
 }
 
-// `%output %<pane> <data>`
-fn parse_output(args: &str) -> Option<Notification> {
-    let (pane, data) = args.split_once(' ').unwrap_or((args, ""));
-    let pane = pane_id(pane)?;
+// The byte path: `%output` / `%extended-output` are the only lines carrying raw
+// (possibly non-UTF-8) pane bytes. Returns `Some` for an output line — including
+// `Some(Unknown)` for a malformed one, so it never falls through to the text path —
+// and `None` for any other keyword, which the text path then handles.
+fn parse_output_line(line: &[u8]) -> Option<Notification> {
+    let unknown = || Notification::Unknown(String::from_utf8_lossy(line).into_owned());
+
+    if let Some(rest) = line.strip_prefix(b"%output ") {
+        return Some(parse_output(rest).unwrap_or_else(unknown));
+    }
+    if let Some(rest) = line.strip_prefix(b"%extended-output ") {
+        return Some(parse_extended_output(rest).unwrap_or_else(unknown));
+    }
+    None
+}
+
+// `%output %<pane> <data>` (prefix already stripped) — `<data>` decoded as raw bytes.
+fn parse_output(rest: &[u8]) -> Option<Notification> {
+    let (pane, data) = match rest.iter().position(|&b| b == b' ') {
+        Some(sp) => (&rest[..sp], &rest[sp + 1..]),
+        None => (rest, &b""[..]),
+    };
     Some(Notification::Output {
-        pane,
+        pane: pane_id_bytes(pane)?,
         bytes: decode_output(data),
     })
 }
 
-// `%extended-output %<pane> <ms-behind> : <data>`
-fn parse_extended_output(args: &str) -> Option<Notification> {
-    let (pane, tail) = args.split_once(' ')?;
-    let pane = pane_id(pane)?;
-    let (age, data) = tail.split_once(" : ")?;
-    let ms_behind: u32 = age.parse().ok()?;
+// `%extended-output %<pane> <ms-behind> : <data>` (prefix already stripped).
+fn parse_extended_output(rest: &[u8]) -> Option<Notification> {
+    let space = rest.iter().position(|&b| b == b' ')?;
+    let pane = pane_id_bytes(&rest[..space])?;
+    let tail = &rest[space + 1..];
+
+    let sep = find_subslice(tail, b" : ")?;
+    let ms_behind: u32 = std::str::from_utf8(&tail[..sep]).ok()?.parse().ok()?;
+    let data = &tail[sep + 3..];
     Some(Notification::ExtendedOutput {
         pane,
         ms_behind,
         bytes: decode_output(data),
     })
+}
+
+// A pane id from raw bytes: `%<digits>` (ASCII).
+fn pane_id_bytes(token: &[u8]) -> Option<PaneId> {
+    let digits = token.strip_prefix(b"%")?;
+    std::str::from_utf8(digits).ok()?.parse().ok().map(PaneId)
+}
+
+// Index of the first occurrence of `needle` in `haystack`.
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 // `%layout-change @<win> <layout> [<visible-layout> <flags>]`. Layout strings hold
@@ -301,7 +346,10 @@ mod tests {
 
     fn drain(lines: &[&str]) -> Vec<Event> {
         let mut parser = Parser::new();
-        lines.iter().filter_map(|l| parser.push(l)).collect()
+        lines
+            .iter()
+            .filter_map(|l| parser.push(l.as_bytes()))
+            .collect()
     }
 
     #[test]
@@ -313,6 +361,23 @@ mod tests {
                 pane: PaneId(1),
                 bytes: b"hi\x1bthere".to_vec(),
             })]
+        );
+    }
+
+    #[test]
+    fn output_preserves_non_utf8_bytes() {
+        // A raw 0xFF in the payload is invalid UTF-8 the &str path would mangle;
+        // the byte path passes it through verbatim.
+        let mut parser = Parser::new();
+        let mut line = b"%output %1 ".to_vec();
+        line.extend_from_slice(&[0xff, b'e', b'n', b'd']);
+
+        assert_eq!(
+            parser.push(&line),
+            Some(Event::Notification(Notification::Output {
+                pane: PaneId(1),
+                bytes: vec![0xff, b'e', b'n', b'd'],
+            }))
         );
     }
 
