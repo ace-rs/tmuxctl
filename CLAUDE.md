@@ -5,7 +5,7 @@ A bidirectional tmux **control-mode** (`tmux -C`) client crate: spawn `tmux -C`,
 command-number, octal-decode pane output, and model tmux's layout tree. **Protocol layer
 only** — no terminal emulation, no rendering, no UI (that is the consumer's job).
 
-Published as the crate `tmuxctl`; the repo is `tmux-rs`. Dual-licensed MIT/Apache-2.0.
+Published as the crate `tmuxctl`; the repo is `ace-rs/tmuxctl`. Dual-licensed MIT/Apache-2.0.
 
 ## Status
 

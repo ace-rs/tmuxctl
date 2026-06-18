@@ -5,14 +5,14 @@ hangar-driven over `ace-connect`.
 
 ## Where it stands
 
-Crate `tmuxctl` (repo `tmux-rs`, being renamed to `tmuxctl`). Three commits on `main`:
+Crate `tmuxctl` (repo `ace-rs/tmuxctl`, renamed from `tmux-rs`). Three commits on `main`:
 
 1. `bb743fe` — scaffold: crate skeleton, docs tree, dual MIT/Apache-2.0, ACE config.
 2. `8ed591a` — `Layout::parse`/`render`/`to_layout_string` + checksum round-trip.
 3. `ef3a45b` — sync line `Parser` (framing + `%begin`/`%end`/`%error` reply blocks).
 
 21 tests green, clippy + fmt clean, build ~0.3s. Public API is locked and was sent to
-hangar (snapshot was `/tmp/tmuxctl-api-tmux-rs.md` — ephemeral; the source of truth is the
+hangar (snapshot was an ephemeral `/tmp` file; the source of truth is the
 re-exports in `src/lib.rs`).
 
 ## Next task (the immediate one)
@@ -29,11 +29,10 @@ before writing the Client. Get chakrit's go-ahead on the dep.
 
 ## On resume — re-establish the bridge
 
-The directory rename `tmux-rs` → `tmuxctl` changes the deterministic ace-connect slug from
-`ace-rs.tmux-rs.claude` to **`ace-rs.tmuxctl.claude`**. On the next session: re-bind the
-listener under the new slug in **autonomous mode**, then `send.sh` hangar
-(`ace-rs.hangar.claude`) a `CTX` that the new slug is live so it can re-predict the peer.
-hangar was told this is coming.
+The directory is now `tmuxctl`, so the deterministic ace-connect slug is
+**`ace-rs.tmuxctl.claude`** (was `ace-rs.tmux-rs.claude`). Re-bind the listener under this
+slug in **autonomous mode**, then `send.sh` hangar (`ace-rs.hangar.claude`) a `CTX` that the
+slug is live so it can re-predict the peer.
 
 ## Notes / divergences worth remembering
 
@@ -45,5 +44,5 @@ hangar was told this is coming.
   ids, so it does not round-trip through `Layout::parse` — use ids in test fixtures.
 - Primary regression net going forward is transcript record/replay (capture real `tmux -C`,
   replay bytes, assert the `Event` stream). Pairs with the `smoke` skill.
-- `Cargo.toml` `repository` is a guess (`github.com/ace-rs/tmux-rs`) — no git remote set;
-  fix when the repo gets a home (and update to `…/tmuxctl` if the GitHub repo is renamed too).
+- `Cargo.toml` `repository` is now `github.com/ace-rs/tmuxctl`; the `gh` remote is wired and
+  `main` is pushed.

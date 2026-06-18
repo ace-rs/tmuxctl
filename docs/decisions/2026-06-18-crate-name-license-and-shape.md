@@ -5,7 +5,7 @@
 
 ## Context
 
-This repo (`tmux-rs`) hosts the standalone tmux control-mode client specced in hangar's
+This repo hosts the standalone tmux control-mode client specced in hangar's
 `docs/spec/tmux-control-crate.md`. Onboarding into ACE forced three identity decisions that
 ripple through `Cargo.toml`, every doc, and the eventual crates.io listing.
 
@@ -14,8 +14,8 @@ ripple through `Cargo.toml`, every doc, and the eventual crates.io listing.
 **Crate name: `tmuxctl`.** Chosen over the spec's draft `tmux-control` and the alternatives
 `tmux-cc` / `tmuxc`. Reads like `systemctl` — "tmux control" — short at the callsite,
 unambiguous, and self-explanatory. All candidates were free on crates.io at decision time;
-`tmuxctl` confirmed available. The repo keeps the name `tmux-rs`; the crate publishes as
-`tmuxctl`.
+`tmuxctl` confirmed available. (Superseded 2026-06-18: the repo, initially `tmux-rs`, was
+renamed to `tmuxctl` to match the crate; remote is `github.com/ace-rs/tmuxctl`.)
 
 **License: dual MIT OR Apache-2.0.** The broader Rust ecosystem norm; the Apache half adds
 an explicit patent grant that a standalone, publishable crate benefits from. (The sibling
