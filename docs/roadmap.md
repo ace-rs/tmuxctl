@@ -17,9 +17,11 @@ Pure, synchronous, sans-IO core, tested (35 tests, clippy+fmt clean), one dep (`
 - Sans-IO correlation `Engine`: `register_command()`→`CommandId`, `on_line()`→`Incoming`,
   FIFO correlation, server-internal replies skipped. `CommandOutput`/`CommandError`.
 
-Next: the byte→line framing + `&[u8]` seam and the EOF/teardown seam (audit fix-slices
-below, both pre-driver), then the `blocking` driver. Not started: drivers, version guard,
-transcript regression net, publishing.
+The two pre-driver core seams have landed (audit #1 byte/framing `fa6483d`, #2 EOF/teardown
+`d807525`): `Engine::feed(&[u8])` frames the raw stream, `Engine::on_eof()` drains waiters.
+Next: the **`blocking` driver** (`spawn`/`command`/events-as-`Receiver`/typed helpers) over
+the engine. Lower-ranked audit items (#3–#6) and: version guard, transcript regression net,
+publishing.
 
 ## Audit 1 — fix-slices (2026-06-18)
 
@@ -27,16 +29,13 @@ First two-phase audit (code-quality + architecture). Ranked; top two are core-sh
 decisions that must land **before** the `blocking` driver, and both touch a hangar-pinned
 surface (coordinating before implementing).
 
-1. **Byte→line framing + `&[u8]` line type (BLOCKER).** `%output` passes bytes ≥0x80 raw,
-   so an output line is not valid UTF-8 — but `Parser::push`/`decode_output` take `&str`.
-   Nothing frames the raw stream into lines across reads either. Add a pure
-   `Engine::feed(&[u8])` that frames on `\n`, buffers the partial tail, and hands byte-lines
-   to a `&[u8]`-taking parse path; `decode_output` becomes `&[u8] -> Vec<u8>` (text fields
-   still `str`-parsed). **Changes the pinned `decode_output` signature — hangar sign-off
-   first.** Unblocks the spec's "UTF-8 split across chunk boundaries" test.
-2. **EOF/teardown seam.** Pending commands at pipe-EOF never resolve → a blocking
-   `command()` would hang forever. Add `Engine::on_eof()` that drains the FIFO, resolving
-   each waiter as a disconnect error. Decide the seam before the driver.
+1. **Byte→line framing + `&[u8]` line type (BLOCKER). — DONE (`fa6483d`).** `decode_output`
+   is now `&[u8] -> Vec<u8>`, `Parser::push` takes `&[u8]` (output decoded on the byte path,
+   text lines `from_utf8_lossy`'d), and `Engine::feed(&[u8])` frames on `\n` buffering the
+   partial tail. hangar-approved. The chunk-boundary-with-non-UTF-8 test now exists.
+2. **EOF/teardown seam. — DONE (`d807525`).** `Engine::on_eof()` drains pending commands as
+   `Err(CommandError::Disconnected)`; `CommandError` is now `Failed { lines } | Disconnected`.
+   Driver signals EOF to event consumers by dropping the events `Sender`.
 3. **Command-number desync tripwire.** Correlation is positional (FIFO) — sound, but the
    parsed `number` is dropped. Track it as a strictly-increasing assertion to catch a
    dropped/reordered block instead of silently mis-correlating; amend `spec/overview.md`
