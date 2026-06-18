@@ -90,9 +90,10 @@ impl Engine {
         while let Some(newline) = self.buf.iter().position(|&b| b == b'\n') {
             let mut line: Vec<u8> = self.buf.drain(..=newline).collect();
             line.pop(); // drop the trailing '\n'
-            if !line.is_empty()
-                && let Some(incoming) = self.on_line(&line)
-            {
+            // Empty lines pass through: a blank line *inside* a reply block is real
+            // command output. Only a stray top-level blank is dropped — by the parser,
+            // which alone knows the block-vs-top-level context.
+            if let Some(incoming) = self.on_line(&line) {
                 out.push(incoming);
             }
         }
@@ -276,6 +277,25 @@ mod tests {
         );
         // Idempotent once drained — nothing left to resolve.
         assert!(engine.on_eof().is_empty());
+    }
+
+    #[test]
+    fn reply_preserves_interior_blank_lines() {
+        // A blank line inside a reply block is real command output — it must survive
+        // the framer, which sits beneath block buffering.
+        let mut engine = Engine::new();
+        let id = engine.register_command();
+
+        let out = engine.feed(b"%begin 1 1 1\na\n\nb\n%end 1 1 1\n");
+        assert_eq!(
+            out,
+            vec![Incoming::Reply {
+                id,
+                result: Ok(CommandOutput {
+                    lines: vec!["a".to_string(), String::new(), "b".to_string()],
+                }),
+            }]
+        );
     }
 
     #[test]

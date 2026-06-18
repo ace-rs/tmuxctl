@@ -77,6 +77,9 @@ impl Parser {
     }
 
     fn push_at_top_level(&mut self, line: &str) -> Option<Event> {
+        if line.is_empty() {
+            return None; // stray blank line between notifications — not an `Unknown`
+        }
         if let Some(Guard {
             kind: GuardKind::Begin,
             number,
@@ -576,6 +579,11 @@ mod tests {
                 "server exited".to_string()
             )))]
         );
+    }
+
+    #[test]
+    fn stray_blank_line_is_skipped_not_unknown() {
+        assert_eq!(drain(&[""]), vec![]);
     }
 
     #[test]
