@@ -79,7 +79,11 @@ impl Client {
     pub fn command(&self, cmd: &str) -> CommandResult {
         let (tx, rx) = mpsc::channel();
         {
-            let mut shared = self.shared.lock().expect("driver mutex poisoned");
+            // A poisoned lock means the reader thread panicked — the session is gone,
+            // so report disconnect rather than propagating the panic to the caller.
+            let Ok(mut shared) = self.shared.lock() else {
+                return Err(CommandError::Disconnected);
+            };
             if !shared.connected {
                 return Err(CommandError::Disconnected);
             }
@@ -97,8 +101,9 @@ impl Client {
 
 impl Drop for Client {
     fn drop(&mut self) {
-        // An empty line detaches the control client: tmux exits, the reader hits EOF,
-        // and the thread ends — so the join below cannot hang on a live session.
+        // An empty line detaches the control client: a tmux (or any transport that
+        // honors empty-line detach) exits, the reader hits EOF, and the thread ends —
+        // so the join below terminates rather than hanging on a live session.
         if let Ok(mut shared) = self.shared.lock() {
             let _ = shared.writer.write_all(b"\n");
             let _ = shared.writer.flush();
