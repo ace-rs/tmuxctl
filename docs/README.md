@@ -1,6 +1,10 @@
 # tmuxctl docs
 
-Durable documentation for the `tmuxctl` crate, split by purpose:
+Durable documentation for the `tmuxctl` crate, split by purpose.
+
+Start at [`roadmap.md`](roadmap.md) for the sequencing from here to a published crate.
+
+Split by purpose:
 
 **Usage docs** (sorted by type):
 
