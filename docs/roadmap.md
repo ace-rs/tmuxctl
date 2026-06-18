@@ -37,26 +37,27 @@ Each lands tests-first against fixture lines pulled from the source map. The
 `%layout-change` fix changes the `LayoutChange` variant shape — do it before any consumer
 pins the type.
 
-## Phase 1 — Runtime decision (blocks Phase 2, chakrit's call)
+## Phase 1 — Runtime decision (RESOLVED)
 
-The `Client` needs an async runtime. Two open questions from the spec must resolve first:
+Resolved 2026-06-18 (chakrit): **sans-IO core, no runtime; feature-gated drivers.** The
+core (Parser + reply-correlation state machine) is pure and synchronous; runtime support is
+feature-gated drivers (`blocking` — hangar's choice — plus `tokio`, `smol`) that own the
+process and pump bytes through the core. No mandatory async dep. See
+[`decisions/2026-06-18-sans-io-core-feature-gated-drivers.md`](decisions/2026-06-18-sans-io-core-feature-gated-drivers.md).
+Supersedes the spec's "Async on tokio" sketch.
 
-1. **tokio-only vs. runtime-agnostic core** (expose `AsyncRead`/`AsyncWrite`). tokio-only is
-   simpler and matches the consumer (hangar); agnostic widens reuse at a generics cost.
-2. **The tokio dependency add itself** — deliberately not taken autonomously.
+## Phase 2 — `Client` (sans-IO core + `blocking` driver)
 
-Recommendation: tokio-only for `0.x`, with the parser already runtime-free so an agnostic
-core stays a non-breaking future extraction. Captured as an ADR once decided.
+First the pure correlation core, then the `blocking` reader-thread driver around it.
+`tokio`/`smol` drivers follow. Spawn `tmux -C` (**not** `-CC`) over separate stdin/stdout
+pipes; pump stdout lines through `parser::Parser`.
 
-## Phase 2 — Async `Client`
-
-Spawn `tmux -C` (**not** `-CC`) over separate stdin/stdout pipes; drive `parser::Parser`
-over the stdout lines on a read task.
-
-- **Reply correlation:** FIFO of issued commands, each holding a oneshot; on `Event::Reply`
-  resolve by command-number. Numbers are monotonic but **sparse** and **process-global** —
-  never assume start-at-0 or +1.
-- **Event stream:** `events() -> impl Stream<Item = Notification>` for the async lines.
+- **Reply correlation (pure core):** a state machine, not a runtime primitive — register a
+  command, match `%begin`…`%end`/`%error` back by command-number, resolve. Numbers are
+  monotonic but **sparse** and **process-global** — never assume start-at-0 or +1. Drivers
+  layer ergonomics on top (`blocking`: `command() -> Result`; async drivers: `async fn`).
+- **Event surface:** the driver exposes the async `Notification`s (iterator for `blocking`,
+  stream for async drivers).
 - **Teardown:** detach on an explicit empty-line write; treat pipe EOF as session end (the
   `%exit` gotcha — it comes from the client process, not the server emitter).
 - **Errors:** `%error` blocks resolve their future as `Err(CommandError)` carrying the
