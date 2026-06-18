@@ -32,12 +32,16 @@ pub struct CommandOutput {
     pub lines: Vec<String>,
 }
 
-/// A command's `%error` reply: tmux's failure message lines.
+/// Why a command did not return successful output.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("tmux command failed: {}", .lines.join("; "))]
 #[non_exhaustive]
-pub struct CommandError {
-    pub lines: Vec<String>,
+pub enum CommandError {
+    /// tmux replied `%error` — its failure message lines.
+    #[error("tmux command failed: {}", .lines.join("; "))]
+    Failed { lines: Vec<String> },
+    /// The control session ended (pipe EOF / `%exit`) before the reply arrived.
+    #[error("control session disconnected before reply")]
+    Disconnected,
 }
 
 /// A correlated outcome the engine surfaces from one input line.
@@ -116,11 +120,25 @@ impl Engine {
             false => Ok(CommandOutput {
                 lines: reply.output,
             }),
-            true => Err(CommandError {
+            true => Err(CommandError::Failed {
                 lines: reply.output,
             }),
         };
         Some(Incoming::Reply { id, result })
+    }
+
+    /// Signal that the control stream ended (pipe EOF). Drains every outstanding
+    /// command, resolving each as `Err(CommandError::Disconnected)` so a blocking
+    /// `command()` caller unblocks instead of hanging when tmux exits. Leaves the
+    /// engine empty; the driver stops feeding after this.
+    pub fn on_eof(&mut self) -> Vec<Incoming> {
+        self.pending
+            .drain(..)
+            .map(|id| Incoming::Reply {
+                id,
+                result: Err(CommandError::Disconnected),
+            })
+            .collect()
     }
 }
 
@@ -172,7 +190,7 @@ mod tests {
             done,
             Some(Incoming::Reply {
                 id,
-                result: Err(CommandError {
+                result: Err(CommandError::Failed {
                     lines: vec!["no such window".to_string()],
                 }),
             })
@@ -234,6 +252,30 @@ mod tests {
         let orphan = engine.on_line(b"%end 1 50 1");
 
         assert_eq!(orphan, None);
+    }
+
+    #[test]
+    fn on_eof_drains_pending_as_disconnected() {
+        let mut engine = Engine::new();
+        let first = engine.register_command();
+        let second = engine.register_command();
+
+        let drained = engine.on_eof();
+        assert_eq!(
+            drained,
+            vec![
+                Incoming::Reply {
+                    id: first,
+                    result: Err(CommandError::Disconnected),
+                },
+                Incoming::Reply {
+                    id: second,
+                    result: Err(CommandError::Disconnected),
+                },
+            ]
+        );
+        // Idempotent once drained — nothing left to resolve.
+        assert!(engine.on_eof().is_empty());
     }
 
     #[test]
