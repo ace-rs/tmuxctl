@@ -192,12 +192,19 @@ pub fn decode_output(escaped: &str) -> Vec<u8>;   // \ooo octal → raw bytes
 - Use `tmuxpulse`'s `src/mux/tmux/control.rs` as a Rust-idiom head-start for the async line
   reader → event enum, but **add** the reply correlation and output unescaping it omits.
   `robber-m/C-Tmux-Control-Mode` is a compact secondary reference.
-- **Version-gate.** Detect the spawned tmux version; flow control
-  (`%pause`/`%continue`/`%extended-output`), `%pane-mode-changed`, `%subscription-changed`,
-  and the extra `%layout-change` args are newer (tmux ≥ 2.x–3.x). Tolerate and log unknown
-  `%`-lines.
+- **Version handling — SUPERSEDED.** This bullet's "detect version, gate the newer signals"
+  guidance is replaced by lock-step single-target versioning + robustness — see
+  [`../decisions/2026-06-18-lock-step-tmux-and-robustness.md`](../decisions/2026-06-18-lock-step-tmux-and-robustness.md).
+  There is no version-gating: target one pinned tmux, produce strictly for it, accept the
+  stream liberally (unknown `%`-lines → `Notification::Unknown`), and let tmux's own
+  `PROTOCOL_VERSION` check be the compatibility arbiter.
 
 ## Testing
+
+The full pyramid (pure → transcript replay → injected-transport driver → containerized
+real-tmux integration that doubles as fixture generator) is specified in
+[`../decisions/2026-06-18-container-test-strategy.md`](../decisions/2026-06-18-container-test-strategy.md).
+In brief:
 
 - **Transcript record/replay:** capture real `tmux -C` sessions, replay the bytes through the
   parser, assert the `Notification` stream. The primary regression net — pairs well with

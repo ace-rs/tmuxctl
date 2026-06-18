@@ -131,19 +131,20 @@ Thin, typed wrappers over a raw `command(&str)` escape hatch (which stays primar
 - Open question: how much command surface to type vs. leaving raw primary — typed the two
   high-use ones, defer the rest.
 
-## Phase 4 — Version detection & gating
+## Phase 4 — Version guard + pin (collapsed)
 
-Detect the spawned tmux version on handshake; gate the newer signals
-(`%pause`/`%continue`/`%extended-output`, `%pane-mode-changed`, `%subscription-changed`, the
-extra `%layout-change` args). Keep tolerate-and-log for unknown `%`-lines regardless.
+Per [the lock-step ADR](decisions/2026-06-18-lock-step-tmux-and-robustness.md), there is **no
+version-gating**: target one pinned tmux (commit SHA), produce strictly, accept liberally,
+let tmux be the compat arbiter. This phase is just: record the pinned `TARGET_TMUX` ref and
+expose detected version as telemetry. No per-version branches.
 
 ## Phase 5 — Regression net & integration
 
-- **Transcript record/replay** (primary net): capture real `tmux -C` byte streams, replay
-  through the parser, assert the `Notification` stream. Pairs with the `smoke` skill for
-  golden-file snapshots.
-- **Live integration** via a local `scripts/*.sh` (no GitHub Actions): spawn real tmux,
-  create+split a window, send keys, assert events + layout.
+Specified by [the container test-strategy ADR](decisions/2026-06-18-container-test-strategy.md):
+the four-layer pyramid (pure → transcript replay → injected-transport driver → containerized
+real-tmux integration). Integration keys off `TMUXCTL_TMUX_BIN`, is `#[ignore]`d, runs via a
+local `scripts/integration.sh` (no Actions), and **doubles as the fixture generator** for the
+fast `Engine::feed` replay net (`smoke` golden files).
 
 ## Phase 6 — Publishing
 
