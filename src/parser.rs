@@ -26,6 +26,11 @@ pub enum Event {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Reply {
     pub number: u64,
+    /// `true` when the `%begin` flags field is set — a reply to a command *we* sent
+    /// over the control channel, not a server-internal command whose output tmux
+    /// echoed to us. Reply correlation must consume only control replies, else a
+    /// server-internal block would desync the command FIFO.
+    pub control: bool,
     pub output: Vec<String>,
     pub error: bool,
 }
@@ -39,6 +44,7 @@ pub struct Parser {
 #[derive(Debug)]
 struct PendingReply {
     number: u64,
+    control: bool,
     output: Vec<String>,
 }
 
@@ -58,9 +64,15 @@ impl Parser {
     }
 
     fn push_at_top_level(&mut self, line: &str) -> Option<Event> {
-        if let Some((Guard::Begin, number)) = parse_guard(line) {
+        if let Some(Guard {
+            kind: GuardKind::Begin,
+            number,
+            control,
+        }) = parse_guard(line)
+        {
             self.pending = Some(PendingReply {
                 number,
+                control,
                 output: Vec::new(),
             });
             return None;
@@ -69,9 +81,9 @@ impl Parser {
     }
 
     fn push_within_block(&mut self, line: &str) -> Option<Event> {
-        let error = match parse_guard(line) {
-            Some((Guard::End, _)) => false,
-            Some((Guard::Error, _)) => true,
+        let error = match parse_guard(line).map(|guard| guard.kind) {
+            Some(GuardKind::End) => false,
+            Some(GuardKind::Error) => true,
             _ => {
                 // Content line — buffer verbatim, even if it looks like a `%`-line.
                 if let Some(pending) = self.pending.as_mut() {
@@ -84,33 +96,45 @@ impl Parser {
         let pending = self.pending.take()?;
         Some(Event::Reply(Reply {
             number: pending.number,
+            control: pending.control,
             output: pending.output,
             error,
         }))
     }
 }
 
-enum Guard {
+struct Guard {
+    kind: GuardKind,
+    number: u64,
+    control: bool,
+}
+
+enum GuardKind {
     Begin,
     End,
     Error,
 }
 
-/// Recognize a `%begin`/`%end`/`%error <ts> <number> <flags>` guard line and
-/// pull its command-number.
-fn parse_guard(line: &str) -> Option<(Guard, u64)> {
+/// Recognize a `%begin`/`%end`/`%error <ts> <number> <flags>` guard line and pull
+/// its command-number and the control flag (`flags != 0`).
+fn parse_guard(line: &str) -> Option<Guard> {
     let rest = line.strip_prefix('%')?;
     let mut parts = rest.split(' ');
 
-    let guard = match parts.next()? {
-        "begin" => Guard::Begin,
-        "end" => Guard::End,
-        "error" => Guard::Error,
+    let kind = match parts.next()? {
+        "begin" => GuardKind::Begin,
+        "end" => GuardKind::End,
+        "error" => GuardKind::Error,
         _ => return None,
     };
     let _timestamp = parts.next()?;
     let number: u64 = parts.next()?.parse().ok()?;
-    Some((guard, number))
+    let control = parts.next()?.parse::<u32>().ok()? != 0;
+    Some(Guard {
+        kind,
+        number,
+        control,
+    })
 }
 
 fn parse_notification(line: &str) -> Notification {
@@ -304,10 +328,28 @@ mod tests {
             events,
             vec![Event::Reply(Reply {
                 number: 7,
+                control: true,
                 output: vec!["line one".to_string(), "line two".to_string()],
                 error: false,
             })]
         );
+    }
+
+    #[test]
+    fn reply_carries_control_flag() {
+        // flags=1 → reply to our control-channel command; flags=0 → server-internal
+        // command output echoed to us, which correlation must not consume.
+        let ours = drain(&["%begin 1 5 1", "ok", "%end 1 5 1"]);
+        let theirs = drain(&["%begin 1 6 0", "internal", "%end 1 6 0"]);
+
+        let Event::Reply(ours) = &ours[0] else {
+            panic!("expected a reply");
+        };
+        let Event::Reply(theirs) = &theirs[0] else {
+            panic!("expected a reply");
+        };
+        assert!(ours.control);
+        assert!(!theirs.control);
     }
 
     #[test]
