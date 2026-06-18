@@ -16,10 +16,11 @@
 //!
 //! # Status
 //!
-//! Pre-implementation. The value types ([`PaneId`], [`Notification`], [`Layout`])
-//! and the fully-specified pure helpers ([`decode_output`], [`layout::checksum`])
-//! are in place; the async [`Client`](client) and the line parser are the next
-//! slices.
+//! Early. The value types ([`PaneId`], [`Notification`], [`Layout`]), the pure
+//! helpers ([`decode_output`], [`layout::checksum`], [`Layout::parse`]), and the
+//! synchronous line [`Parser`] (framing + `%begin`/`%end` reply blocks) are in
+//! place and tested. The async `Client` (spawn `tmux -C`, drive the parser over
+//! tokio pipes, correlate replies to futures) is the next slice.
 
 mod error;
 mod ids;
@@ -27,9 +28,11 @@ mod notification;
 mod output;
 
 pub mod layout;
+pub mod parser;
 
 pub use error::{Error, Result};
 pub use ids::{PaneId, SessionId, WindowId};
 pub use layout::Layout;
 pub use notification::Notification;
 pub use output::decode_output;
+pub use parser::{Event, Parser, Reply};
