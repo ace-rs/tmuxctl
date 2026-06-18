@@ -8,34 +8,64 @@ top. Living doc — update as slices land. The contract it builds toward is
 
 ## Where it stands
 
-Pure, synchronous, dependency-free core is in place and tested (21 tests, clippy+fmt clean):
+Pure, synchronous, sans-IO core, tested (35 tests, clippy+fmt clean), one dep (`thiserror`):
 
 - Wire ids (`PaneId`/`WindowId`/`SessionId`), `decode_output` (octal unescape),
   `Layout::parse`/`render`/`checksum` round-trip.
-- Incremental line `Parser`: `%begin`…`%end`/`%error` reply framing by command-number, plus
-  a typed `Notification` for most async `%`-lines.
+- Incremental line `Parser`: `%begin`…`%end`/`%error` reply framing carrying the control
+  flag, plus the **complete** typed `Notification` set (`#[non_exhaustive]`).
+- Sans-IO correlation `Engine`: `register_command()`→`CommandId`, `on_line()`→`Incoming`,
+  FIFO correlation, server-internal replies skipped. `CommandOutput`/`CommandError`.
 
-Not started: the async `Client` (spawn + writer + reply correlation + event stream), full
-notification coverage, version gating, the transcript regression net, and publishing.
+Next: the byte→line framing + `&[u8]` seam and the EOF/teardown seam (audit fix-slices
+below, both pre-driver), then the `blocking` driver. Not started: drivers, version guard,
+transcript regression net, publishing.
 
-## Phase 0 — Complete notification coverage (no new deps, do now)
+## Audit 1 — fix-slices (2026-06-18)
 
-The parser silently routes several real `%`-lines to `Notification::Unknown`. Close the gap
-while it's still pure code — no runtime decision blocks this.
+First two-phase audit (code-quality + architecture). Ranked; top two are core-shape
+decisions that must land **before** the `blocking` driver, and both touch a hangar-pinned
+surface (coordinating before implementing).
 
-| Wire line                                       | Status        | Work                                    |
-|-------------------------------------------------|---------------|-----------------------------------------|
-| `%layout-change @w <layout> <vis> <flags>`      | lossy         | capture `visible_layout` + flags (zoom) |
-| `%window-pane-changed @w %p`                     | → `Unknown`   | add variant + parse                     |
-| `%unlinked-window-add/-close/-renamed @w`        | → `Unknown`   | add variants (windows in other sessions)|
-| `%session-renamed $s <name>`                     | → `Unknown`   | add variant + parse                     |
-| `%session-window-changed $s @w`                  | → `Unknown`   | add variant + parse                     |
-| `%client-session-changed <client> $s <name>`     | → `Unknown`   | add variant + parse                     |
-| `%continue %p` payload                           | verify        | confirmed `%continue %<pane>` (ADR note)|
+1. **Byte→line framing + `&[u8]` line type (BLOCKER).** `%output` passes bytes ≥0x80 raw,
+   so an output line is not valid UTF-8 — but `Parser::push`/`decode_output` take `&str`.
+   Nothing frames the raw stream into lines across reads either. Add a pure
+   `Engine::feed(&[u8])` that frames on `\n`, buffers the partial tail, and hands byte-lines
+   to a `&[u8]`-taking parse path; `decode_output` becomes `&[u8] -> Vec<u8>` (text fields
+   still `str`-parsed). **Changes the pinned `decode_output` signature — hangar sign-off
+   first.** Unblocks the spec's "UTF-8 split across chunk boundaries" test.
+2. **EOF/teardown seam.** Pending commands at pipe-EOF never resolve → a blocking
+   `command()` would hang forever. Add `Engine::on_eof()` that drains the FIFO, resolving
+   each waiter as a disconnect error. Decide the seam before the driver.
+3. **Command-number desync tripwire.** Correlation is positional (FIFO) — sound, but the
+   parsed `number` is dropped. Track it as a strictly-increasing assertion to catch a
+   dropped/reordered block instead of silently mis-correlating; amend `spec/overview.md`
+   (which says "correlate by number") to bless positional correlation.
+4. **Unterminated-block guard.** A dropped `%end` makes `push_within_block` buffer the rest
+   of the stream forever. Treat a top-level `%begin` mid-block (or a size bound) as a desync
+   signal. (Related to #1's framer.)
+5. **`WindowFlags` for `LayoutChange.flags`.** `Option<String>` is a stringly-typed leak of
+   a known bitset (`*` current, `Z` zoomed, `!` bell, …). Parse to a hand-rolled
+   `WindowFlags` (no new dep) at the boundary. Before a consumer pins `LayoutChange`.
+6. **Reconcile `Error::Command`/`Error::Exit` vs `CommandError`/`Notification::Exit`.**
+   Parallel structures over the same failures; the crate-`Error` variants may be pre-sans-IO
+   leftovers. Decide when typed helpers land (they're the `Error::Command` consumer); drop
+   if dead.
 
-Each lands tests-first against fixture lines pulled from the source map. The
-`%layout-change` fix changes the `LayoutChange` variant shape — do it before any consumer
-pins the type.
+Nits (deferred): `parse_guard` accepts trailing tokens (tighten to reject); `parse_subscription`
+discards the id header (document as intentional or capture); subscription `name` assumes no
+spaces. Declined: restructuring `Reply.error: bool` into a sum type — the parser frames
+blocks, command-semantics `Result` belongs to the engine; bool at the parser layer is correct
+layering (rationale recorded here).
+
+## Phase 0 — Complete notification coverage — DONE
+
+Landed (`e45a6b9`, `5cf4d77`): the full notification set + `LayoutChange` carrying
+`visible_layout`/`flags`, and the reply control-flag. Caveat: `%client-detached`,
+`%paste-buffer-changed`, `%paste-buffer-deleted` exist in tmux but are intentionally left to
+`Notification::Unknown` for now (not in hangar's pinned set) — "complete" means the pinned
+set, not every tmux line. `Layout` does not yet parse 3.7 floating-pane `<…>` sections —
+tracked gap, add when targeting that.
 
 ## Phase 1 — Runtime decision (RESOLVED)
 

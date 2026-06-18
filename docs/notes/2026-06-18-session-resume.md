@@ -1,48 +1,54 @@
 # Session resume — 2026-06-18
 
-Breadcrumb for the next `/ace`. Repo onboarded into ACE and first slices landed,
-hangar-driven over `ace-connect`.
+Breadcrumb for the next `/ace`. hangar-driven over `ace-connect`, autonomous slice loop.
 
 ## Where it stands
 
-Crate `tmuxctl` (repo `ace-rs/tmuxctl`, renamed from `tmux-rs`). Three commits on `main`:
+Crate `tmuxctl`, repo `ace-rs/tmuxctl` (public, `gh` remote, `main` pushed). Sans-IO core,
+35 tests, clippy + fmt clean, one dep (`thiserror`). Recent landings on `main`:
 
-1. `bb743fe` — scaffold: crate skeleton, docs tree, dual MIT/Apache-2.0, ACE config.
-2. `8ed591a` — `Layout::parse`/`render`/`to_layout_string` + checksum round-trip.
-3. `ef3a45b` — sync line `Parser` (framing + `%begin`/`%end`/`%error` reply blocks).
+- Full `Notification` set + `LayoutChange { visible_layout, flags }`; `#[non_exhaustive]`.
+- `Parser` carries the `%begin` control flag (control vs server-internal replies).
+- Sans-IO correlation `Engine` (Parser + command FIFO): `register_command()`→`CommandId`,
+  `on_line()`→`Incoming` (`Notification` | `Reply{id, Result<CommandOutput, CommandError>}`).
 
-21 tests green, clippy + fmt clean, build ~0.3s. Public API is locked and was sent to
-hangar (snapshot was an ephemeral `/tmp` file; the source of truth is the
-re-exports in `src/lib.rs`).
+Architecture is decided (see ADRs): **sans-IO core, no runtime; feature-gated drivers**
+(`blocking` for hangar, `tokio`, `smol`). The tokio-dep question is moot.
 
-## Next task (the immediate one)
+## Next task (the immediate ones — audit fix-slices, pre-driver)
 
-**Async `Client`** — spawn `tmux -C` (NOT `-CC`) over separate stdin/stdout pipes, drive
-`parser::Parser` over the stdout lines, and correlate `Event::Reply { number }` back to
-issuing commands via a FIFO of oneshots. Typed helpers (`send_keys_literal`, `resize`,
-`detach`) over a raw `command()`.
+First two-phase audit done; findings are ranked in [`../roadmap.md`](../roadmap.md)
+"Audit 1". Top two are core-shape and **touch hangar-pinned surface — coordinate first**:
 
-**Blocked on a decision (chakrit's):** the Client needs **tokio**, which is a dependency
-add — deliberately not done autonomously. This also forces the spec's open question:
-**runtime-agnostic core (expose `AsyncRead`/`AsyncWrite`) vs. tokio-only.** Resolve that
-before writing the Client. Get chakrit's go-ahead on the dep.
+1. **Byte→line framing + `&[u8]` line type.** `%output` carries raw ≥0x80 bytes, so a line
+   isn't valid UTF-8; `Parser::push`/`decode_output` take `&str` (wrong). Add pure
+   `Engine::feed(&[u8])` framing on `\n` + a `&[u8]` parse path; `decode_output` →
+   `&[u8] -> Vec<u8>`. **Pinned `decode_output` signature change — needs hangar sign-off.**
+2. **EOF/teardown seam** — `Engine::on_eof()` draining pending commands as disconnect errors
+   so a blocking `command()` can't hang at pipe-EOF.
+
+Then: `blocking` driver (`spawn`/`command`/events-as-`Receiver`/typed helpers), wrapping the
+Engine. Lower-ranked audit items: command-number desync tripwire, unterminated-block guard,
+`WindowFlags`, `Error::Command`/`Exit` reconciliation.
 
 ## On resume — re-establish the bridge
 
-The directory is now `tmuxctl`, so the deterministic ace-connect slug is
-**`ace-rs.tmuxctl.claude`** (was `ace-rs.tmux-rs.claude`). Re-bind the listener under this
-slug in **autonomous mode**, then `send.sh` hangar (`ace-rs.hangar.claude`) a `CTX` that the
-slug is live so it can re-predict the peer.
+Deterministic ace-connect slug is **`ace-rs.tmuxctl.claude`**. Re-bind the listener under it
+in **autonomous mode**, then `send.sh` hangar (`ace-rs.hangar.claude`) a `CTX` that the slug
+is live. The autonomous workflow (grant + safety envelope + 2–3-slice/audit cadence) is in
+`CLAUDE.md` and [`../guides/slice-loop.md`](../guides/slice-loop.md).
 
 ## Notes / divergences worth remembering
 
-- `Notification::Pause(PaneId)` / `Continue(PaneId)` carry a pane id — corrected from the
-  spec's API sketch (which had `Continue` payload-less) against the verified wire
-  `%pause %<pane>` / `%continue %<pane>`. Not yet version-gated; gate when the Client adds
-  tmux-version detection.
-- Layout leaves carry **bare** pane numbers (no `%`); the spec's `bb62` example omits pane
-  ids, so it does not round-trip through `Layout::parse` — use ids in test fixtures.
-- Primary regression net going forward is transcript record/replay (capture real `tmux -C`,
-  replay bytes, assert the `Event` stream). Pairs with the `smoke` skill.
-- `Cargo.toml` `repository` is now `github.com/ace-rs/tmuxctl`; the `gh` remote is wired and
-  `main` is pushed.
+- Correlation is **positional (FIFO)**, not by command-number — sound because tmux runs the
+  queue serially; only control replies (`flags != 0`) consume the FIFO. The spec still says
+  "correlate by number"; audit fix-slice #3 amends it.
+- `Notification::Pause`/`Continue` carry `PaneId` (verified wire `%pause %<pane>` /
+  `%continue %<pane>`). Version handling is **lock-step + robustness** (strict-produce one
+  pinned tmux, liberal-accept, tmux is the compat arbiter) — still pending an ADR (chakrit's
+  test-strategy close).
+- Layout leaves carry **bare** pane numbers (no `%`); use ids in test fixtures. 3.7
+  floating-pane `<…>` sections not parsed yet (tracked gap).
+- Primary regression net going forward is transcript record/replay against a pinned tmux
+  built in a container (see the test-strategy discussion); pairs with `smoke`. The chunk-
+  split test depends on the framer (fix-slice #1).
