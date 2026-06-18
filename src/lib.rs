@@ -40,6 +40,6 @@ pub use engine::{CommandError, CommandId, CommandOutput, Engine, Incoming};
 pub use error::{Error, Result};
 pub use ids::{PaneId, SessionId, WindowId};
 pub use layout::Layout;
-pub use notification::Notification;
+pub use notification::{Notification, WindowFlags};
 pub use output::decode_output;
 pub use parser::{Event, Parser, Reply};

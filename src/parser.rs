@@ -9,7 +9,7 @@
 
 use crate::ids::{PaneId, SessionId, WindowId};
 use crate::layout::Layout;
-use crate::notification::Notification;
+use crate::notification::{Notification, WindowFlags};
 use crate::output::decode_output;
 
 /// One thing the parser surfaces from the line stream.
@@ -225,7 +225,7 @@ fn parse_extended_output(rest: &[u8]) -> Option<Notification> {
     let tail = &rest[space + 1..];
 
     let sep = find_subslice(tail, b" : ")?;
-    let ms_behind: u32 = std::str::from_utf8(&tail[..sep]).ok()?.parse().ok()?;
+    let ms_behind: u64 = std::str::from_utf8(&tail[..sep]).ok()?.parse().ok()?;
     let data = &tail[sep + 3..];
     Some(Notification::ExtendedOutput {
         pane,
@@ -255,13 +255,32 @@ fn parse_layout_change(args: &str) -> Option<Notification> {
     let window = window_id(parts.next()?)?;
     let layout = Layout::parse(parts.next()?).ok()?;
     let visible_layout = parts.next().map(Layout::parse).transpose().ok()?;
-    let flags = parts.next().map(|s| s.to_string());
+    let flags = parts.next().map(parse_window_flags);
     Some(Notification::LayoutChange {
         window,
         layout,
         visible_layout,
         flags,
     })
+}
+
+// The raw window-flags field of `%layout-change` — see `window_printable_flags`
+// in tmux `window.c`. Unrecognized characters are retained, never dropped.
+fn parse_window_flags(field: &str) -> WindowFlags {
+    let mut flags = WindowFlags::default();
+    for ch in field.chars() {
+        match ch {
+            '*' => flags.current = true,
+            '-' => flags.last = true,
+            '#' => flags.activity = true,
+            '!' => flags.bell = true,
+            '~' => flags.silence = true,
+            'M' => flags.marked = true,
+            'Z' => flags.zoomed = true,
+            other => flags.unknown.push(other),
+        }
+    }
+    flags
 }
 
 // `%window-pane-changed @<win> %<pane>`
@@ -549,7 +568,31 @@ mod tests {
         };
         assert_eq!(*window, WindowId(1));
         assert!(visible_layout.is_some());
-        assert_eq!(flags.as_deref(), Some("*Z"));
+        assert_eq!(
+            flags,
+            &Some(WindowFlags {
+                current: true,
+                zoomed: true,
+                ..Default::default()
+            })
+        );
+    }
+
+    #[test]
+    fn window_flags_retain_unknown_chars() {
+        // A flag char this version doesn't model must be kept, not dropped.
+        let events = drain(&["%layout-change @0 159x48,0,0,0 159x48,0,0,0 !Q"]);
+        let Event::Notification(Notification::LayoutChange { flags, .. }) = &events[0] else {
+            panic!("expected a layout change");
+        };
+        assert_eq!(
+            flags,
+            &Some(WindowFlags {
+                bell: true,
+                unknown: "Q".to_string(),
+                ..Default::default()
+            })
+        );
     }
 
     #[test]

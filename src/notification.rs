@@ -19,9 +19,10 @@ pub enum Notification {
     Output { pane: PaneId, bytes: Vec<u8> },
 
     /// `%extended-output %<pane> <ms-behind> : <data>` — output under flow control.
+    /// `ms_behind` is tmux's `%llu` age, so `u64` (a `u32` overflows after ~49 days).
     ExtendedOutput {
         pane: PaneId,
-        ms_behind: u32,
+        ms_behind: u64,
         bytes: Vec<u8>,
     },
 
@@ -32,7 +33,7 @@ pub enum Notification {
         window: WindowId,
         layout: Layout,
         visible_layout: Option<Layout>,
-        flags: Option<String>,
+        flags: Option<WindowFlags>,
     },
 
     /// `%window-add @<win>` — a window was created in the attached session.
@@ -86,4 +87,29 @@ pub enum Notification {
 
     /// An unrecognized `%…` line, kept verbatim. Log and skip.
     Unknown(String),
+}
+
+/// tmux's window flags, the raw-flags field of `%layout-change`
+/// (`window_printable_flags` in tmux `window.c`). Each known flag is a named field;
+/// any character tmux adds that we don't model yet is retained in `unknown`, so the
+/// set is forward-compatible and nothing is dropped.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct WindowFlags {
+    /// `*` — the session's current window.
+    pub current: bool,
+    /// `-` — the session's last (previously current) window.
+    pub last: bool,
+    /// `#` — activity in the window.
+    pub activity: bool,
+    /// `!` — a bell rang in the window.
+    pub bell: bool,
+    /// `~` — the window has been silent (silence alert).
+    pub silence: bool,
+    /// `M` — the window contains the marked pane.
+    pub marked: bool,
+    /// `Z` — the window's active pane is zoomed.
+    pub zoomed: bool,
+    /// Any flag characters tmux emitted that this version does not model.
+    pub unknown: String,
 }
