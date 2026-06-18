@@ -22,6 +22,7 @@
 //! place and tested. The async `Client` (spawn `tmux -C`, drive the parser over
 //! tokio pipes, correlate replies to futures) is the next slice.
 
+mod engine;
 mod error;
 mod ids;
 mod notification;
@@ -30,6 +31,7 @@ mod output;
 pub mod layout;
 pub mod parser;
 
+pub use engine::{CommandError, CommandId, CommandOutput, Engine, Incoming};
 pub use error::{Error, Result};
 pub use ids::{PaneId, SessionId, WindowId};
 pub use layout::Layout;
