@@ -97,18 +97,44 @@ impl Parser {
     }
 
     fn push_within_block(&mut self, line: &str) -> Option<Event> {
-        let error = match parse_guard(line).map(|guard| guard.kind) {
-            Some(GuardKind::End) => false,
-            Some(GuardKind::Error) => true,
-            _ => {
+        match parse_guard(line) {
+            Some(Guard {
+                kind: GuardKind::End,
+                ..
+            }) => self.close_block(false),
+            Some(Guard {
+                kind: GuardKind::Error,
+                ..
+            }) => self.close_block(true),
+            Some(Guard {
+                kind: GuardKind::Begin,
+                number,
+                control,
+            }) => {
+                // A `%begin` while a block is open means the prior `%end` was lost
+                // (tmux never nests blocks). Flush the truncated block as an error
+                // reply — so its command fails fast and the FIFO stays aligned —
+                // rather than buffering the rest of the stream forever, then open
+                // the new block.
+                let truncated = self.close_block(true);
+                self.pending = Some(PendingReply {
+                    number,
+                    control,
+                    output: Vec::new(),
+                });
+                truncated
+            }
+            None => {
                 // Content line — buffer verbatim, even if it looks like a `%`-line.
                 if let Some(pending) = self.pending.as_mut() {
                     pending.output.push(line.to_string());
                 }
-                return None;
+                None
             }
-        };
+        }
+    }
 
+    fn close_block(&mut self, error: bool) -> Option<Event> {
         let pending = self.pending.take()?;
         Some(Event::Reply(Reply {
             number: pending.number,
@@ -437,6 +463,33 @@ mod tests {
         };
         assert!(ours.control);
         assert!(!theirs.control);
+    }
+
+    #[test]
+    fn dropped_end_recovers_on_next_begin() {
+        // The first block never sees its %end; the next %begin flushes it as an
+        // error reply (bounded), and the second block closes normally.
+        let events = drain(&[
+            "%begin 1 1 1",
+            "partial-a",
+            "%begin 1 2 1",
+            "full-b",
+            "%end 1 2 1",
+        ]);
+        assert_eq!(events.len(), 2);
+
+        let Event::Reply(truncated) = &events[0] else {
+            panic!("expected the truncated reply");
+        };
+        assert!(truncated.error);
+        assert_eq!(truncated.number, 1);
+        assert_eq!(truncated.output, vec!["partial-a".to_string()]);
+
+        let Event::Reply(complete) = &events[1] else {
+            panic!("expected the complete reply");
+        };
+        assert!(!complete.error);
+        assert_eq!(complete.number, 2);
     }
 
     #[test]
