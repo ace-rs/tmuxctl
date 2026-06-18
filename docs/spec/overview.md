@@ -66,14 +66,24 @@ Every command sent produces exactly one reply block:
 ```
 
 - `timestamp` = seconds since epoch; `command-number` = unique, monotonically increasing;
-  `flags` currently always `1`. Emitted by `cmdq_guard` (cmd-queue.c).
-- **Correlate by `command-number`.** Keep a FIFO of issued commands, each with a oneshot. On
-  `%begin`, capture the number and buffer lines until the matching `%end`/`%error`, then
-  resolve. Asynchronous `%`-notifications interleave freely between a command and its reply —
-  only the numbering disambiguates. Never assume a reply immediately follows its command.
+  `flags` = `1` for replies to commands *we* sent over the control channel, `0` for
+  server-internal commands whose output tmux echoes to us. Emitted by `cmdq_guard`
+  (cmd-queue.c).
+- **Correlate positionally (FIFO), not by number.** tmux runs its command queue serially, so
+  reply blocks arrive in the exact order commands were sent: keep a FIFO of issued commands,
+  and the next *control* reply block (`flags = 1`) resolves the queue's front. A
+  server-internal block (`flags = 0`) must **not** consume the FIFO. Asynchronous
+  `%`-notifications interleave freely between a command and its `%begin`; never assume a
+  reply immediately follows its command. (The crate does this in `engine::Engine`.)
+- The `command-number` is **not** the correlation key — it can't be: tmux assigns it when the
+  command *runs*, which the client doesn't know at send time. It serves instead as a
+  **monotonic desync tripwire**: the control replies a client observes are a strictly
+  increasing subsequence, so a non-increasing number signals mis-framing (checked via
+  `debug_assert!`).
 - **Gotcha:** the command-number counter is **process-global** in tmux (`static u_int number`
   in `cmdq_next`), so the numbers a single control client observes are monotonic but
-  **sparse** — do not assume they start at 0 or increment by 1.
+  **sparse** — do not assume they start at 0 or increment by 1. (This is exactly why
+  correlation is positional, not numeric.)
 
 ## Pane output & escaping
 

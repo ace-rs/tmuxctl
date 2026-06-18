@@ -63,6 +63,7 @@ pub struct Engine {
     pending: VecDeque<CommandId>,
     next_id: u64,
     buf: Vec<u8>,
+    last_number: Option<u64>,
 }
 
 impl Engine {
@@ -115,6 +116,19 @@ impl Engine {
         if !reply.control {
             return None;
         }
+
+        // tmux's command-number is monotonic, so the control replies we observe are a
+        // strictly-increasing subsequence. Correlation itself is positional (FIFO);
+        // this is a desync tripwire — a non-increasing number means our framing
+        // mis-paired a block, which transcript-replay tests will then catch.
+        debug_assert!(
+            self.last_number.is_none_or(|last| reply.number > last),
+            "control-reply numbers must strictly increase (FIFO desync): \
+             {} did not exceed {:?}",
+            reply.number,
+            self.last_number,
+        );
+        self.last_number = Some(reply.number);
 
         let id = self.pending.pop_front()?;
         let result = match reply.error {
@@ -243,6 +257,20 @@ mod tests {
         engine.on_line(b"%begin 1 40 1");
         let done = engine.on_line(b"%end 1 40 1");
         assert!(matches!(done, Some(Incoming::Reply { id: got, .. }) if got == id));
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "strictly increase")]
+    fn non_increasing_reply_number_trips_desync() {
+        let mut engine = Engine::new();
+        engine.register_command();
+        engine.register_command();
+
+        engine.on_line(b"%begin 1 5 1");
+        engine.on_line(b"%end 1 5 1");
+        engine.on_line(b"%begin 1 5 1"); // same number again — a framing desync
+        engine.on_line(b"%end 1 5 1");
     }
 
     #[test]
