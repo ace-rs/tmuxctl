@@ -28,9 +28,14 @@ mod ids;
 mod notification;
 mod output;
 
+#[cfg(feature = "blocking")]
+mod blocking;
+
 pub mod layout;
 pub mod parser;
 
+#[cfg(feature = "blocking")]
+pub use blocking::Client;
 pub use engine::{CommandError, CommandId, CommandOutput, Engine, Incoming};
 pub use error::{Error, Result};
 pub use ids::{PaneId, SessionId, WindowId};

@@ -10,6 +10,12 @@ readme = "README.md"
 keywords = ["tmux", "control-mode", "terminal", "multiplexer"]
 categories = ["api-bindings", "parser-implementations"]
 
+[features]
+default = ["blocking"]
+# Runtime drivers wrapping the sans-IO core. `blocking` is std-only (no extra deps);
+# `tokio`/`smol` arrive later behind their own optional deps.
+blocking = []
+
 [dependencies]
 thiserror = "2"
 
