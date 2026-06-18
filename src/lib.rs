@@ -35,7 +35,7 @@ pub mod layout;
 pub mod parser;
 
 #[cfg(feature = "blocking")]
-pub use blocking::Client;
+pub use blocking::{Client, SpawnOpts};
 pub use engine::{CommandError, CommandId, CommandOutput, Engine, Incoming};
 pub use error::{Error, Result};
 pub use ids::{PaneId, SessionId, WindowId};

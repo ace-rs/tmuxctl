@@ -9,12 +9,37 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::engine::{CommandError, CommandId, CommandOutput, Engine, Incoming};
+use crate::ids::PaneId;
 use crate::notification::Notification;
+
+/// How to spawn the `tmux -C` control client. `Default` runs `tmux -C new-session -A`
+/// (attach-or-create the default session) on the default server.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct SpawnOpts {
+    /// The tmux binary to run.
+    pub program: String,
+    /// Server socket name for `-L` (isolation); `None` uses tmux's default server.
+    pub socket: Option<String>,
+    /// Session for `-s` (with `new-session -A`, attach-or-create); `None` leaves it unnamed.
+    pub session: Option<String>,
+}
+
+impl Default for SpawnOpts {
+    fn default() -> Self {
+        Self {
+            program: "tmux".to_string(),
+            socket: None,
+            session: None,
+        }
+    }
+}
 
 /// The outcome of a command: tmux's output, or why it failed.
 type CommandResult = Result<CommandOutput, CommandError>;
@@ -43,13 +68,48 @@ pub struct Client {
     shared: Arc<Mutex<Shared>>,
     events: Option<Receiver<Notification>>,
     reader: Option<JoinHandle<()>>,
+    child: Option<Child>,
 }
 
 impl Client {
-    /// Build a client over an injected transport: the reader half is moved to the
-    /// reader thread, the writer half kept for sending commands. `spawn` wraps this
-    /// around a real `tmux -C` child; tests wrap it around an in-memory pipe.
+    /// Spawn `tmux -C` (control mode — never `-CC`) over piped stdin/stdout and wrap
+    /// it. The empty input line that [`Drop`] writes detaches the control client, so
+    /// the child exits and is reaped.
+    pub fn spawn(opts: SpawnOpts) -> std::io::Result<Client> {
+        let mut command = Command::new(&opts.program);
+        if let Some(socket) = &opts.socket {
+            command.arg("-L").arg(socket);
+        }
+        command.arg("-C").arg("new-session").arg("-A");
+        if let Some(session) = &opts.session {
+            command.arg("-s").arg(session);
+        }
+        command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+
+        let mut child = command.spawn()?;
+        let stdout = child.stdout.take().expect("piped stdout");
+        let stdin = child.stdin.take().expect("piped stdin");
+        Ok(Self::from_parts(
+            Box::new(stdout),
+            Box::new(stdin),
+            Some(child),
+        ))
+    }
+
+    /// Build a client over an injected transport, no child process. `spawn` is the
+    /// real entry point; this is the seam tests wrap around an in-memory pipe.
     pub fn with_transport(reader: Box<dyn Read + Send>, writer: Box<dyn Write + Send>) -> Client {
+        Self::from_parts(reader, writer, None)
+    }
+
+    fn from_parts(
+        reader: Box<dyn Read + Send>,
+        writer: Box<dyn Write + Send>,
+        child: Option<Child>,
+    ) -> Client {
         let shared = Arc::new(Mutex::new(Shared {
             engine: Engine::new(),
             writer,
@@ -65,6 +125,7 @@ impl Client {
             shared,
             events: Some(events_rx),
             reader: Some(reader),
+            child,
         }
     }
 
@@ -97,6 +158,22 @@ impl Client {
         }
         rx.recv().unwrap_or(Err(CommandError::Disconnected))
     }
+
+    /// Send raw bytes to a pane as key input. Uses `send-keys -H` (hex byte values),
+    /// the safe path for arbitrary bytes and control sequences — no key-name lookup.
+    pub fn send_keys(&self, pane: PaneId, keys: &[u8]) -> Result<(), CommandError> {
+        let mut cmd = format!("send-keys -t %{} -H", pane.0);
+        for byte in keys {
+            cmd.push_str(&format!(" {byte:02x}"));
+        }
+        self.command(&cmd).map(drop)
+    }
+
+    /// Set this control client's size via `refresh-client -C <cols>x<rows>`.
+    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), CommandError> {
+        self.command(&format!("refresh-client -C {cols}x{rows}"))
+            .map(drop)
+    }
 }
 
 impl Drop for Client {
@@ -110,6 +187,10 @@ impl Drop for Client {
         }
         if let Some(reader) = self.reader.take() {
             let _ = reader.join();
+        }
+        // Reap the tmux child (it exited on the detach above) so it isn't a zombie.
+        if let Some(mut child) = self.child.take() {
+            let _ = child.wait();
         }
     }
 }
@@ -170,6 +251,18 @@ mod tests {
         (reader, writer)
     }
 
+    /// A fake tmux: read one command line, assert it equals `expected`, reply `%end`.
+    fn fake_tmux_expecting(mut sock: UnixStream, expected: &'static str) -> thread::JoinHandle<()> {
+        thread::spawn(move || {
+            let mut buf = [0u8; 256];
+            let n = sock.read(&mut buf).expect("read command");
+            let got = std::str::from_utf8(&buf[..n]).expect("utf8 command");
+            assert_eq!(got.trim_end(), expected);
+            sock.write_all(b"%begin 1 1 1\n%end 1 1 1\n")
+                .expect("write reply");
+        })
+    }
+
     #[test]
     fn delivers_notifications_to_events_receiver() {
         let (mut tmux, client_io) = UnixStream::pair().expect("socket pair");
@@ -211,6 +304,37 @@ mod tests {
                 lines: vec!["pane-info".to_string()],
             })
         );
+
+        fake.join().expect("fake tmux");
+        drop(tmux);
+    }
+
+    #[test]
+    fn send_keys_emits_hex_bytes() {
+        let (tmux, client_io) = UnixStream::pair().expect("socket pair");
+        let (reader, writer) = client_over(client_io);
+        let client = Client::with_transport(reader, writer);
+
+        let fake = fake_tmux_expecting(
+            tmux.try_clone().expect("clone"),
+            "send-keys -t %1 -H 1b 5b 41",
+        );
+        client
+            .send_keys(PaneId(1), &[0x1b, 0x5b, 0x41])
+            .expect("send_keys");
+
+        fake.join().expect("fake tmux");
+        drop(tmux);
+    }
+
+    #[test]
+    fn resize_emits_client_size() {
+        let (tmux, client_io) = UnixStream::pair().expect("socket pair");
+        let (reader, writer) = client_over(client_io);
+        let client = Client::with_transport(reader, writer);
+
+        let fake = fake_tmux_expecting(tmux.try_clone().expect("clone"), "refresh-client -C 80x24");
+        client.resize(80, 24).expect("resize");
 
         fake.join().expect("fake tmux");
         drop(tmux);
