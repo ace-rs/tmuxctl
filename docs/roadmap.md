@@ -73,15 +73,17 @@ regression test (`b25ca60`).
   empty-line skip ran beneath block buffering; moved the top-level-only skip into the parser.
 - **A2-2. `command()` panicked on a poisoned lock. — DONE (`77f40c8`).** Now returns
   `Disconnected` if the reader thread panicked.
-- **A2-3. `ExtendedOutput.ms_behind` `u32` → `u64`.** tmux's age is `%llu`; `u32` overflows
-  (~49 days of ms) and loses the line to `Unknown`. **Pinned `Notification` field — hangar
-  sign-off pending.**
+- **A2-3. `ExtendedOutput.ms_behind` `u32` → `u64`. — DONE (`9888f55`).** hangar-approved.
 - **A2-4. `child: Option<Child>` on `Client`.** `spawn` must hold and reap the tmux child or
   it orphans a zombie. Lands with driver Slice B.
-- Carryover, still open: **#3 desync tripwire**, **#4 unterminated-block guard** (both pure,
-  unblocked — next slices), **#5 `WindowFlags`** (pin pressure — hangar sign-off pending),
-  **#6 dead `Error::Io`/`Command`/`Exit`** (confirmed dead, sans-IO settled it — hangar
-  sign-off pending; consider `#[non_exhaustive] Error`).
+- **#4 unterminated-block guard. — DONE (`0580d79`).** A mid-block `%begin` flushes the
+  truncated block as an error reply and resyncs, instead of buffering the stream forever.
+- **#5 `WindowFlags`. — DONE (`9888f55`).** `LayoutChange.flags` is now `Option<WindowFlags>`
+  covering the full tmux flag set, unmodeled chars retained. hangar-approved.
+- **#6 dead `Error::Io`/`Command`/`Exit`. — DONE (`ee9511a`).** Dropped; `Error` is now
+  `Layout`-only and `#[non_exhaustive]`. hangar-approved.
+- Carryover, still open: **#3 desync tripwire** (pure, unblocked — next slice; track the
+  parsed reply `number` as a strictly-increasing assertion + amend `spec/overview.md`).
 - Nits: write-failure leaves an orphaned id in `pending` (harmless, `on_eof` drains it).
 
 Async-driver note (for the future `tokio`/`smol` slice): `blocking`'s single `Mutex<Shared>`

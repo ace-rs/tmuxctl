@@ -14,6 +14,9 @@ Thumbs.db
 .inbox.log
 .ace-connect-inbox.log
 
+# ace-afk handoff log
+.afk.log
+
 # ACE-managed — do not edit this block.
 # Managed by ACE. See https://github.com/ace-rs/ace
 .agents/agents

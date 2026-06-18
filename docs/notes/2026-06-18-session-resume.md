@@ -1,54 +1,61 @@
 # Session resume — 2026-06-18
 
-Breadcrumb for the next `/ace`. hangar-driven over `ace-connect`, autonomous slice loop.
+Breadcrumb for the next `/ace`. hangar-driven over `ace-connect`, autonomous slice loop
+(`/ace-afk` for unattended runs). Two audit cycles done.
 
 ## Where it stands
 
-Crate `tmuxctl`, repo `ace-rs/tmuxctl` (public, `gh` remote, `main` pushed). Sans-IO core,
-35 tests, clippy + fmt clean, one dep (`thiserror`). Recent landings on `main`:
+Crate `tmuxctl`, repo `ace-rs/tmuxctl` (public, `gh` remote, `main` pushed — **push pending**,
+nothing pushed since the initial scaffold). 47 tests, clippy + fmt clean, one dep
+(`thiserror`). The sans-IO core + the first driver are in place:
 
-- Full `Notification` set + `LayoutChange { visible_layout, flags }`; `#[non_exhaustive]`.
-- `Parser` carries the `%begin` control flag (control vs server-internal replies).
-- Sans-IO correlation `Engine` (Parser + command FIFO): `register_command()`→`CommandId`,
-  `on_line()`→`Incoming` (`Notification` | `Reply{id, Result<CommandOutput, CommandError>}`).
+- **Core (pure, no runtime):** id newtypes; `decode_output(&[u8])`; `Layout`
+  parse/render/checksum; the line `Parser` (`&[u8]`, reply framing + control flag, full
+  `Notification` set, recovers from a dropped `%end`); the correlation `Engine`
+  (`feed(&[u8])` framer, `on_eof()`, FIFO correlation). `WindowFlags`, `CommandOutput`,
+  `CommandError` (`Failed`|`Disconnected`). `Error` is `Layout`-only, `#[non_exhaustive]`.
+- **`blocking` driver (default feature, std-only):** `Client::with_transport` — reader
+  thread over `Engine::feed`, `command()` blocking on a per-command channel, events as a
+  `Receiver`, EOF→`Disconnected` teardown, poison-tolerant. Unit-tested over a `UnixStream`
+  pair (no real tmux).
 
-Architecture is decided (see ADRs): **sans-IO core, no runtime; feature-gated drivers**
-(`blocking` for hangar, `tokio`, `smol`). The tokio-dep question is moot.
+Two audits passed. Audit 2 concurrency verdict: **`command()` cannot hang**. All audit
+findings resolved except the two below.
 
-## Next task (the immediate ones — audit fix-slices, pre-driver)
+## Next task (unblocked, pure — next slices)
 
-First two-phase audit done; findings are ranked in [`../roadmap.md`](../roadmap.md)
-"Audit 1". Top two are core-shape and **touch hangar-pinned surface — coordinate first**:
+1. **#3 desync tripwire.** Correlation is positional FIFO (sound). Track the parsed reply
+   `number` as a strictly-increasing assertion to catch a dropped/reordered block instead of
+   silently mis-correlating. Amend `docs/spec/overview.md` ("correlate by number") to bless
+   positional correlation. Pure, no pinned-surface change.
+2. **Driver Slice B.** `Client::spawn` (real `tmux -C`, **not** `-CC`; add a
+   `child: Option<Child>` field and reap it in `Drop` — else zombie) + typed helpers
+   `send_keys` (`-l`/`-H`) and `resize` (`refresh-client -C`). `SpawnOpts` lives in the
+   driver, not the core. Spawn's integration test needs real tmux → gated/deferred (depends
+   on the open container test-strategy decision); the helpers are testable over the fake
+   transport (assert the bytes written).
 
-1. **Byte→line framing + `&[u8]` line type.** `%output` carries raw ≥0x80 bytes, so a line
-   isn't valid UTF-8; `Parser::push`/`decode_output` take `&str` (wrong). Add pure
-   `Engine::feed(&[u8])` framing on `\n` + a `&[u8]` parse path; `decode_output` →
-   `&[u8] -> Vec<u8>`. **Pinned `decode_output` signature change — needs hangar sign-off.**
-2. **EOF/teardown seam** — `Engine::on_eof()` draining pending commands as disconnect errors
-   so a blocking `command()` can't hang at pipe-EOF.
+Then: version guard (lock-step), transcript regression net (Phase 5), publishing.
 
-Then: `blocking` driver (`spawn`/`command`/events-as-`Receiver`/typed helpers), wrapping the
-Engine. Lower-ranked audit items: command-number desync tripwire, unterminated-block guard,
-`WindowFlags`, `Error::Command`/`Exit` reconciliation.
+## Open decisions (chakrit's — not blocking driver work)
 
-## On resume — re-establish the bridge
+- **Lock-step + robustness ADR** (strict-produce one pinned tmux, liberal-accept, tmux is
+  the compat arbiter) — discussed, not yet written. The test-strategy synthesis (container
+  builds a pinned tmux; integration doubles as transcript-fixture generator) is unratified.
 
-Deterministic ace-connect slug is **`ace-rs.tmuxctl.claude`**. Re-bind the listener under it
-in **autonomous mode**, then `send.sh` hangar (`ace-rs.hangar.claude`) a `CTX` that the slug
-is live. The autonomous workflow (grant + safety envelope + 2–3-slice/audit cadence) is in
-`CLAUDE.md` and [`../guides/slice-loop.md`](../guides/slice-loop.md).
+## Re-establish the bridge
 
-## Notes / divergences worth remembering
+Slug **`ace-rs.tmuxctl.claude`**, autonomous mode. On resume: re-bind the listener, `send.sh`
+hangar (`ace-rs.hangar.claude`) a `CTX` that the slug is live. Autonomous workflow (grant +
+safety envelope + 2–3-slice/audit cadence) is in `CLAUDE.md` +
+[`../guides/slice-loop.md`](../guides/slice-loop.md).
 
-- Correlation is **positional (FIFO)**, not by command-number — sound because tmux runs the
-  queue serially; only control replies (`flags != 0`) consume the FIFO. The spec still says
-  "correlate by number"; audit fix-slice #3 amends it.
-- `Notification::Pause`/`Continue` carry `PaneId` (verified wire `%pause %<pane>` /
-  `%continue %<pane>`). Version handling is **lock-step + robustness** (strict-produce one
-  pinned tmux, liberal-accept, tmux is the compat arbiter) — still pending an ADR (chakrit's
-  test-strategy close).
-- Layout leaves carry **bare** pane numbers (no `%`); use ids in test fixtures. 3.7
-  floating-pane `<…>` sections not parsed yet (tracked gap).
-- Primary regression net going forward is transcript record/replay against a pinned tmux
-  built in a container (see the test-strategy discussion); pairs with `smoke`. The chunk-
-  split test depends on the framer (fix-slice #1).
+## Notes / divergences
+
+- Correlation is **positional (FIFO)**, not by command-number — sound (tmux runs the queue
+  serially); only control replies (`flags != 0`) pop the FIFO. #3 adds the number tripwire.
+- Commit messages: **no backticks in `git commit -m`** — the shell runs them as command
+  substitution and mangles the message (hit twice; amended both).
+- Layout leaves carry bare pane numbers; 3.7 floating-pane `<…>` sections not parsed yet.
+- Async-driver note (future `tokio`/`smol`): `blocking`'s single `Mutex<Shared>` is held
+  across `write_all` — won't survive `.await`; don't reuse `Shared` verbatim.
