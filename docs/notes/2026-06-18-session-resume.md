@@ -22,20 +22,23 @@ nothing pushed since the initial scaffold). 47 tests, clippy + fmt clean, one de
 Two audits passed. Audit 2 concurrency verdict: **`command()` cannot hang**. All audit
 findings resolved except the two below.
 
-## Next task (unblocked, pure — next slices)
+## Next task
 
-1. **#3 desync tripwire.** Correlation is positional FIFO (sound). Track the parsed reply
-   `number` as a strictly-increasing assertion to catch a dropped/reordered block instead of
-   silently mis-correlating. Amend `docs/spec/overview.md` ("correlate by number") to bless
-   positional correlation. Pure, no pinned-surface change.
-2. **Driver Slice B.** `Client::spawn` (real `tmux -C`, **not** `-CC`; add a
-   `child: Option<Child>` field and reap it in `Drop` — else zombie) + typed helpers
-   `send_keys` (`-l`/`-H`) and `resize` (`refresh-client -C`). `SpawnOpts` lives in the
-   driver, not the core. Spawn's integration test needs real tmux → gated/deferred (depends
-   on the open container test-strategy decision); the helpers are testable over the fake
-   transport (assert the bytes written).
+The blocking client is complete end-to-end (spawn/command/send_keys/resize/events/teardown).
+Audit 2 fully resolved (incl. #3 desync tripwire `31389a4` and Slice B `8355314`). Candidates
+next, in rough order:
 
-Then: version guard (lock-step), transcript regression net (Phase 5), publishing.
+1. **Real-tmux integration tests** — the one untested seam is `Client::spawn` (and the live
+   round-trip). **Gated on chakrit's container test-strategy decision** (build a pinned tmux,
+   replay; integration doubles as transcript-fixture generator). Until then, `spawn` is
+   code-complete but smoke-untested.
+2. **Transcript regression net** (Phase 5) — `Engine::feed(&[u8]) -> Vec<Incoming>` is the
+   right replay seam; pairs with the `smoke` skill.
+3. **`tokio`/`smol` drivers** — note: don't reuse `blocking`'s `Mutex<Shared>` verbatim (held
+   across `write_all`, won't survive `.await`).
+4. **Version guard** (lock-step) and **publishing**.
+
+Audit 3 is due after ~2–3 more feature slices.
 
 ## Open decisions (chakrit's — not blocking driver work)
 

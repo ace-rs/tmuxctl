@@ -8,23 +8,21 @@ top. Living doc — update as slices land. The contract it builds toward is
 
 ## Where it stands
 
-Pure, synchronous, sans-IO core, tested (35 tests, clippy+fmt clean), one dep (`thiserror`):
+A usable **end-to-end blocking client** is in place (50 tests, clippy+fmt clean, one dep,
+`thiserror`):
 
-- Wire ids (`PaneId`/`WindowId`/`SessionId`), `decode_output` (octal unescape),
-  `Layout::parse`/`render`/`checksum` round-trip.
-- Incremental line `Parser`: `%begin`…`%end`/`%error` reply framing carrying the control
-  flag, plus the **complete** typed `Notification` set (`#[non_exhaustive]`).
-- Sans-IO correlation `Engine`: `register_command()`→`CommandId`, `on_line()`→`Incoming`,
-  FIFO correlation, server-internal replies skipped. `CommandOutput`/`CommandError`.
+- **Pure sans-IO core:** id newtypes, `decode_output(&[u8])`, `Layout` parse/render/checksum;
+  the line `Parser` (`&[u8]`, reply framing + control flag, full `#[non_exhaustive]`
+  `Notification` set, dropped-`%end` recovery); the correlation `Engine` (`feed(&[u8])`
+  framer, `on_eof()`, positional-FIFO correlation with a monotonic-number tripwire).
+  `WindowFlags`, `CommandOutput`, `CommandError`.
+- **`blocking` driver `Client`** (default feature, std-only): `spawn(SpawnOpts)` /
+  `command()` / `send_keys` / `resize` / events `Receiver` / detach+reap teardown.
+  Unit-tested over a `UnixStream` pair — no real tmux.
 
-The two pre-driver core seams have landed (audit #1 byte/framing `fa6483d`, #2 EOF/teardown
-`d807525`): `Engine::feed(&[u8])` frames the raw stream, `Engine::on_eof()` drains waiters.
-The **`blocking` driver** transport core has landed (`2c6eba9`): `Client::with_transport`,
-a reader thread over `Engine::feed`, `command()` blocking on a per-command channel, events
-as a `Receiver`, EOF/`Disconnected` teardown — unit-tested over a `UnixStream` pair.
-Next: driver **Slice B** (`spawn` real tmux — needs a `child: Option<Child>` field — plus
-`send_keys`/`resize` typed helpers), the open audit guards (below), then version guard,
-transcript regression net, publishing.
+Next (all unblocked unless noted): real-tmux integration tests (gated on the container
+test-strategy decision); the `tokio`/`smol` drivers; version guard (lock-step); the
+transcript regression net; publishing.
 
 ## Audit 1 — fix-slices (2026-06-18)
 
@@ -82,9 +80,14 @@ regression test (`b25ca60`).
   covering the full tmux flag set, unmodeled chars retained. hangar-approved.
 - **#6 dead `Error::Io`/`Command`/`Exit`. — DONE (`ee9511a`).** Dropped; `Error` is now
   `Layout`-only and `#[non_exhaustive]`. hangar-approved.
-- Carryover, still open: **#3 desync tripwire** (pure, unblocked — next slice; track the
-  parsed reply `number` as a strictly-increasing assertion + amend `spec/overview.md`).
+- **#3 desync tripwire. — DONE (`31389a4`).** The parsed reply `number` is now a
+  strictly-increasing `debug_assert` (positional FIFO stays the correlation); spec amended to
+  bless positional-not-numeric correlation.
+- **A2-4 `child: Option<Child>`. — DONE (`8355314`).** `spawn` holds and reaps the tmux child
+  in `Drop`.
 - Nits: write-failure leaves an orphaned id in `pending` (harmless, `on_eof` drains it).
+
+**Audit 2 fully resolved.** Audit 3 due after ~2–3 more feature slices.
 
 Async-driver note (for the future `tokio`/`smol` slice): `blocking`'s single `Mutex<Shared>`
 is held across `writer.write_all`, which won't survive `.await` — an async driver needs an
@@ -108,33 +111,25 @@ process and pump bytes through the core. No mandatory async dep. See
 [`decisions/2026-06-18-sans-io-core-feature-gated-drivers.md`](decisions/2026-06-18-sans-io-core-feature-gated-drivers.md).
 Supersedes the spec's "Async on tokio" sketch.
 
-## Phase 2 — `Client` (sans-IO core + `blocking` driver)
+## Phase 2 — `Client` (sans-IO core + `blocking` driver) — DONE
 
-First the pure correlation core, then the `blocking` reader-thread driver around it.
-`tokio`/`smol` drivers follow. Spawn `tmux -C` (**not** `-CC`) over separate stdin/stdout
-pipes; pump stdout lines through `parser::Parser`.
+Landed end-to-end: the pure correlation `Engine`, then the `blocking` `Client` (`4e6f9df`,
+`2c6eba9`, `8355314`). `Client::spawn(SpawnOpts)` runs `tmux -C` (**not** `-CC`) over piped
+stdin/stdout, holds/reaps the child; `command()` blocks on a per-command channel; events are
+a `Receiver<Notification>`; teardown detaches on an empty line and treats EOF/`Disconnected`
+as session end; `%error` → `Err(CommandError::Failed)`. Reply correlation is positional FIFO
+with a monotonic-number tripwire. Open: the `tokio`/`smol` drivers (see the async note above).
 
-- **Reply correlation (pure core):** a state machine, not a runtime primitive — register a
-  command, match `%begin`…`%end`/`%error` back by command-number, resolve. Numbers are
-  monotonic but **sparse** and **process-global** — never assume start-at-0 or +1. Drivers
-  layer ergonomics on top (`blocking`: `command() -> Result`; async drivers: `async fn`).
-- **Event surface:** the driver exposes the async `Notification`s (iterator for `blocking`,
-  stream for async drivers).
-- **Teardown:** detach on an explicit empty-line write; treat pipe EOF as session end (the
-  `%exit` gotcha — it comes from the client process, not the server emitter).
-- **Errors:** `%error` blocks resolve their future as `Err(CommandError)` carrying the
-  output lines.
-
-## Phase 3 — Typed command helpers
+## Phase 3 — Typed command helpers (partial)
 
 Thin, typed wrappers over a raw `command(&str)` escape hatch (which stays primary):
 
-- `send_keys_literal` (`send-keys -l`/`-H` for raw bytes/control sequences).
-- `resize` (`refresh-client -C`), per-window `@w:<wxh>` form.
-- Flow control (`refresh-client -f pause-after=`, `-A '%p:continue'`).
-- Layout push (`select-layout` with a regenerated checksum).
-- Open question: how much command surface to type vs. leaving raw primary — type the four
-  above, defer the rest.
+- **DONE (`8355314`):** `send_keys` (`send-keys -H` hex bytes) and `resize` (`refresh-client
+  -C <cols>x<rows>`).
+- Open: per-window resize (`@w:<wxh>`); flow control (`refresh-client -f pause-after=`,
+  `-A '%p:continue'`); layout push (`select-layout` with a regenerated checksum).
+- Open question: how much command surface to type vs. leaving raw primary — typed the two
+  high-use ones, defer the rest.
 
 ## Phase 4 — Version detection & gating
 
