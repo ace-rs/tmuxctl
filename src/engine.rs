@@ -27,6 +27,7 @@ pub struct CommandId(u64);
 
 /// A command's `%end` reply: its (possibly empty) output lines.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CommandOutput {
     pub lines: Vec<String>,
 }
@@ -34,6 +35,7 @@ pub struct CommandOutput {
 /// A command's `%error` reply: tmux's failure message lines.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("tmux command failed: {}", .lines.join("; "))]
+#[non_exhaustive]
 pub struct CommandError {
     pub lines: Vec<String>,
 }
