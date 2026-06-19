@@ -37,8 +37,15 @@ if [ "$execute" -eq 0 ]; then
 	exit 0
 fi
 
-git tag -a "$tag" -m "tmuxctl $version"
-git push gh "$tag"
-gh release create "$tag" --title "$tag" --generate-notes
+# Idempotent: if the tag already exists (e.g. cargo publish failed and we're
+# retrying), skip tag + GitHub release and go straight to publishing.
+if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+	echo "release: tag $tag already exists — skipping tag + GitHub release"
+else
+	git tag -a "$tag" -m "tmuxctl $version"
+	git push gh "$tag"
+	gh release create "$tag" --title "$tag" --generate-notes
+fi
+
 cargo publish
 echo "release: published tmuxctl $version"
