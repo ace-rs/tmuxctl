@@ -172,6 +172,11 @@ fn parse_guard(line: &str) -> Option<Guard> {
     let _timestamp = parts.next()?;
     let number: u64 = parts.next()?.parse().ok()?;
     let control = parts.next()?.parse::<u32>().ok()? != 0;
+    // A guard is exactly `%<kind> <ts> <number> <flags>`. Reject trailing tokens
+    // (fail closed on a framing-critical line) rather than open a block on garbage.
+    if parts.next().is_some() {
+        return None;
+    }
     Some(Guard {
         kind,
         number,
@@ -680,6 +685,20 @@ mod tests {
     #[test]
     fn stray_blank_line_is_skipped_not_unknown() {
         assert_eq!(drain(&[""]), vec![]);
+    }
+
+    #[test]
+    fn malformed_guard_does_not_open_a_block() {
+        // A guard line with a trailing token is not a real guard — it must not open a
+        // reply block (which would swallow the stream); it degrades to Unknown.
+        let events = drain(&["%begin 1 7 1 garbage", "%window-add @9"]);
+        assert_eq!(
+            events,
+            vec![
+                Event::Notification(Notification::Unknown("%begin 1 7 1 garbage".to_string())),
+                Event::Notification(Notification::WindowAdd(WindowId(9))),
+            ]
+        );
     }
 
     #[test]
