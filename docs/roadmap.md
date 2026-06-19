@@ -152,11 +152,12 @@ real-tmux integration). Integration keys off `TMUXCTL_TMUX_BIN`, is `#[ignore]`d
 local `scripts/integration.sh` (no Actions), and **doubles as the fixture generator** for the
 fast `Engine::feed` replay net (`smoke` golden files).
 
-## Phase 6 — Publishing
+## Phase 6 — Publishing — DONE
 
-README usage section, `scripts/release.sh` (build, checksum, `gh release create`, `cargo
-publish`), confirm dual LICENSE files. Semver from `0.x`. Open question: publish before or
-alongside the first consumer release.
+**v0.1.0 released** (`81eb4de`): README usage section, `scripts/release.sh` (gate → tag →
+`gh release` → `cargo publish`, idempotent re-run), live on crates.io + a GitHub release at
+tag `v0.1.0`. Bump the version (`cargo set-version`) before the next release. Open: the
+`tokio`/`smol` drivers and the pinned-tmux container remain for later releases.
 
 ## Beyond the protocol layer — tmux management utilities
 

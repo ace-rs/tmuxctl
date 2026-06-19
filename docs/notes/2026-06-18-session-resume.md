@@ -6,10 +6,11 @@ release-ready.
 
 ## Where it stands
 
-Crate `tmuxctl`, repo `ace-rs/tmuxctl` (public). `main` pushed through `fca5801`; many
-commits since are **local/unpushed** (additive — don't touch hangar's pinned blocking
-surface). 52 default tests + 3 `--all-features` + 2 `#[ignore]`d integration; clippy + fmt
-clean. Deps: `thiserror` (always) + optional `tokio`/`smol` behind features.
+Crate `tmuxctl`, repo `ace-rs/tmuxctl` (public). **Released: v0.1.0 live on crates.io**
+(`main` @ `81eb4de`, tag `v0.1.0` + GitHub release). 52 default tests + 3 `--all-features`
++ 2 `#[ignore]`d integration; clippy + fmt clean. Deps: `thiserror` (always) + optional
+`tokio`/`smol` behind features. Cargo.toml still says `0.1.0` — bump (`cargo set-version`)
+before the next release.
 
 - **Sans-IO core (pure, no runtime):** id newtypes; `decode_output(&[u8])`; `Layout`
   parse/render/checksum; line `Parser` (`&[u8]`; reply framing + control flag; full
@@ -29,10 +30,8 @@ clean. Deps: `thiserror` (always) + optional `tokio`/`smol` behind features.
 
 ## Next — needs chakrit/hangar decisions (not autonomously unblocked)
 
-1. **Push** the local commits (≈9 since `fca5801`). Authorized on hangar request per the
-   grant; hangar hasn't requested a new push yet. Say "push" or have hangar request it.
-2. **Publish 0.1.0** to crates.io — `scripts/release.sh --execute`. Authorized on hangar
-   request; hangar pins by git rev today and hasn't asked for a crates.io version.
+1. ~~Push~~ — DONE (`81eb4de`).
+2. ~~Publish 0.1.0~~ — DONE (live on crates.io). Next release: bump version first.
 3. **Which tmux to pin** (`TARGET_TMUX` SHA) + the **container Dockerfile** that builds it —
    needed to make integration reproducible beyond the host's tmux 3.6b. The container ADR
    specifies the shape; the version/base choice is yours.
