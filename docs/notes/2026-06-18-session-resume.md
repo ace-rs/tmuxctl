@@ -1,66 +1,61 @@
-# Session resume — 2026-06-18
+# Session resume — 2026-06-18/19
 
 Breadcrumb for the next `/ace`. hangar-driven over `ace-connect`, autonomous slice loop
-(`/ace-afk` for unattended runs). Two audit cycles done.
+(`/ace-afk` for unattended runs). Two audit cycles done; crate is feature-complete and
+release-ready.
 
 ## Where it stands
 
-Crate `tmuxctl`, repo `ace-rs/tmuxctl` (public, `gh` remote, `main` pushed — **push pending**,
-nothing pushed since the initial scaffold). 47 tests, clippy + fmt clean, one dep
-(`thiserror`). The sans-IO core + the first driver are in place:
+Crate `tmuxctl`, repo `ace-rs/tmuxctl` (public). `main` pushed through `fca5801`; many
+commits since are **local/unpushed** (additive — don't touch hangar's pinned blocking
+surface). 52 default tests + 3 `--all-features` + 2 `#[ignore]`d integration; clippy + fmt
+clean. Deps: `thiserror` (always) + optional `tokio`/`smol` behind features.
 
-- **Core (pure, no runtime):** id newtypes; `decode_output(&[u8])`; `Layout`
-  parse/render/checksum; the line `Parser` (`&[u8]`, reply framing + control flag, full
-  `Notification` set, recovers from a dropped `%end`); the correlation `Engine`
-  (`feed(&[u8])` framer, `on_eof()`, FIFO correlation). `WindowFlags`, `CommandOutput`,
-  `CommandError` (`Failed`|`Disconnected`). `Error` is `Layout`-only, `#[non_exhaustive]`.
-- **`blocking` driver (default feature, std-only):** `Client::with_transport` — reader
-  thread over `Engine::feed`, `command()` blocking on a per-command channel, events as a
-  `Receiver`, EOF→`Disconnected` teardown, poison-tolerant. Unit-tested over a `UnixStream`
-  pair (no real tmux).
+- **Sans-IO core (pure, no runtime):** id newtypes; `decode_output(&[u8])`; `Layout`
+  parse/render/checksum; line `Parser` (`&[u8]`; reply framing + control flag; full
+  `#[non_exhaustive]` `Notification` set; dropped-`%end` recovery; trailing-token guard);
+  correlation `Engine` (`feed(&[u8])` framer, `on_eof()`, positional-FIFO + monotonic-number
+  tripwire). `WindowFlags`, `CommandOutput`, `CommandError` (`Failed`|`Disconnected`).
+- **Three drivers**, one core, feature-gated: `Client` (`blocking`, default, std threads),
+  `TokioClient` (`tokio`), `SmolClient` (`smol`) — async via the actor pattern. Each:
+  `spawn(SpawnOpts)` / `command` / `send_keys` / `resize` / events `Receiver` / teardown.
+  Shared `spawn` (SpawnOpts + builder + argv) and `commands` (command strings) modules.
+- **Test pyramid:** units; transcript replay of a real tmux 3.6b capture
+  (`tests/fixtures/structural-session.txt`, asserts no-`Unknown`); injected-transport driver
+  tests; live integration (`tests/integration.rs` + `scripts/integration.sh`, `#[ignore]`d,
+  keyed off `TMUXCTL_TMUX_BIN`, verified green vs tmux 3.6b).
+- **Docs:** README with usage; ADRs (crate-name, sans-IO, lock-step, container test-strategy);
+  `scripts/release.sh` (dry-run verified, `--execute` publishes).
 
-Two audits passed. Audit 2 concurrency verdict: **`command()` cannot hang**. All audit
-findings resolved except the two below.
+## Next — needs chakrit/hangar decisions (not autonomously unblocked)
 
-## Next task
+1. **Push** the local commits (≈9 since `fca5801`). Authorized on hangar request per the
+   grant; hangar hasn't requested a new push yet. Say "push" or have hangar request it.
+2. **Publish 0.1.0** to crates.io — `scripts/release.sh --execute`. Authorized on hangar
+   request; hangar pins by git rev today and hasn't asked for a crates.io version.
+3. **Which tmux to pin** (`TARGET_TMUX` SHA) + the **container Dockerfile** that builds it —
+   needed to make integration reproducible beyond the host's tmux 3.6b. The container ADR
+   specifies the shape; the version/base choice is yours.
+4. **More typed helpers?** (per-window resize, flow control, layout push) — hangar-driven;
+   build when a consumer needs them.
 
-The blocking client is complete end-to-end (spawn/command/send_keys/resize/events/teardown).
-Audit 2 fully resolved (incl. #3 desync tripwire `31389a4` and Slice B `8355314`). Candidates
-next, in rough order:
+## Low-value / deferred (autonomous-OK but minor)
 
-1. **Real-tmux integration tests** — the one untested seam is `Client::spawn` (and the live
-   round-trip). **Gated on chakrit's container test-strategy decision** (build a pinned tmux,
-   replay; integration doubles as transcript-fixture generator). Until then, `spawn` is
-   code-complete but smoke-untested.
-2. **Transcript regression net** (Phase 5) — `Engine::feed(&[u8]) -> Vec<Incoming>` is the
-   right replay seam; pairs with the `smoke` skill.
-3. **`smol` driver** — `tokio` is DONE (`TokioClient`, `2bbc518`, actor pattern, behind the
-   `tokio` feature). `smol` mirrors it on `async-process`/`futures-lite`/`async-channel`; same
-   actor shape. Reuse the shared `spawn`/`commands` modules. Don't copy `blocking`'s
-   `Mutex<Shared>` (held across a write — won't survive `.await`).
-4. **Version guard** (lock-step ADR — write the `TARGET_TMUX` pin) and **publishing**.
-
-Audit 3 is due after ~2–3 more feature slices.
-
-## Open decisions (chakrit's — not blocking driver work)
-
-- **Lock-step + robustness ADR** (strict-produce one pinned tmux, liberal-accept, tmux is
-  the compat arbiter) — discussed, not yet written. The test-strategy synthesis (container
-  builds a pinned tmux; integration doubles as transcript-fixture generator) is unratified.
+- `Client::tmux_version()` telemetry (lock-step ADR); `parse_subscription` id-header capture.
 
 ## Re-establish the bridge
 
-Slug **`ace-rs.tmuxctl.claude`**, autonomous mode. On resume: re-bind the listener, `send.sh`
-hangar (`ace-rs.hangar.claude`) a `CTX` that the slug is live. Autonomous workflow (grant +
-safety envelope + 2–3-slice/audit cadence) is in `CLAUDE.md` +
-[`../guides/slice-loop.md`](../guides/slice-loop.md).
+Slug **`ace-rs.tmuxctl.claude`**, autonomous mode. Standing grant (CLAUDE.md): hangar-requested
+push + cargo release proceed without per-action approval (gates-green + sane-version gated).
+Workflow: CLAUDE.md + [`../guides/slice-loop.md`](../guides/slice-loop.md).
 
 ## Notes / divergences
 
-- Correlation is **positional (FIFO)**, not by command-number — sound (tmux runs the queue
-  serially); only control replies (`flags != 0`) pop the FIFO. #3 adds the number tripwire.
-- Commit messages: **no backticks in `git commit -m`** — the shell runs them as command
-  substitution and mangles the message (hit twice; amended both).
-- Layout leaves carry bare pane numbers; 3.7 floating-pane `<…>` sections not parsed yet.
-- Async-driver note (future `tokio`/`smol`): `blocking`'s single `Mutex<Shared>` is held
-  across `write_all` — won't survive `.await`; don't reuse `Shared` verbatim.
+- Correlation is **positional FIFO** (sound; tmux serial), control replies (`flags != 0`)
+  only; the parsed `number` is a monotonic `debug_assert` desync tripwire.
+- Commit messages: **no backticks in `git commit -m`** (shell command-substitution mangles
+  them — hit twice).
+- Async drivers don't reuse `blocking`'s `Mutex<Shared>` (held across a write) — they use a
+  per-task actor (`select!` / `smol::future::or`).
+- `SpawnOpts` is `#[non_exhaustive]` → external crates must use the builder, not a literal.
+- 3.7 floating-pane `<…>` layout sections not parsed yet (tracked gap).
