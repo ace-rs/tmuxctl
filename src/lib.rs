@@ -28,20 +28,22 @@ mod ids;
 mod notification;
 mod output;
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "smol"))]
 mod commands;
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "smol"))]
 mod spawn;
 
 #[cfg(feature = "blocking")]
 mod blocking;
+#[cfg(feature = "smol")]
+mod smol_rt;
 #[cfg(feature = "tokio")]
 mod tokio_rt;
 
 pub mod layout;
 pub mod parser;
 
-#[cfg(any(feature = "blocking", feature = "tokio"))]
+#[cfg(any(feature = "blocking", feature = "tokio", feature = "smol"))]
 pub use spawn::SpawnOpts;
 
 #[cfg(feature = "blocking")]
@@ -53,5 +55,7 @@ pub use layout::Layout;
 pub use notification::{Notification, WindowFlags};
 pub use output::decode_output;
 pub use parser::{Event, Parser, Reply};
+#[cfg(feature = "smol")]
+pub use smol_rt::SmolClient;
 #[cfg(feature = "tokio")]
 pub use tokio_rt::TokioClient;
