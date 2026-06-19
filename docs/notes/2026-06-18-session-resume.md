@@ -7,10 +7,11 @@ release-ready.
 ## Where it stands
 
 Crate `tmuxctl`, repo `ace-rs/tmuxctl` (public). **Released: v0.1.0 live on crates.io**
-(`main` @ `81eb4de`, tag `v0.1.0` + GitHub release). 52 default tests + 3 `--all-features`
-+ 2 `#[ignore]`d integration; clippy + fmt clean. Deps: `thiserror` (always) + optional
-`tokio`/`smol` behind features. Cargo.toml still says `0.1.0` — bump (`cargo set-version`)
-before the next release.
+(tag `v0.1.0` + GitHub release). `main` pushed through `0e880ee`; HEAD is `67f6c7d` with
+**2 unpushed doc commits** (the human guides, `b4167bd`+`67f6c7d`). 52 default tests + 3
+`--all-features` + 2 `#[ignore]`d integration; clippy + fmt clean. Deps: `thiserror` (always)
++ optional `tokio`/`smol`. Cargo.toml still says `0.1.0` — bump (`cargo set-version`) before
+the next release.
 
 - **Sans-IO core (pure, no runtime):** id newtypes; `decode_output(&[u8])`; `Layout`
   parse/render/checksum; line `Parser` (`&[u8]`; reply framing + control flag; full
@@ -25,12 +26,15 @@ before the next release.
   (`tests/fixtures/structural-session.txt`, asserts no-`Unknown`); injected-transport driver
   tests; live integration (`tests/integration.rs` + `scripts/integration.sh`, `#[ignore]`d,
   keyed off `TMUXCTL_TMUX_BIN`, verified green vs tmux 3.6b).
-- **Docs:** README with usage; ADRs (crate-name, sans-IO, lock-step, container test-strategy);
-  `scripts/release.sh` (dry-run verified, `--execute` publishes).
+- **Docs:** README with usage + guide links; four human guides in `docs/guides/`
+  (getting-started, tmux-concepts, cookbook+FAQ, reference); ADRs (crate-name, sans-IO,
+  lock-step, container test-strategy); `scripts/release.sh` (idempotent, `--execute`
+  publishes).
 
 ## Next — needs chakrit/hangar decisions (not autonomously unblocked)
 
-1. ~~Push~~ — DONE (`81eb4de`).
+1. **Push** the 2 unpushed doc commits (`b4167bd`+`67f6c7d`, the guides — additive). Push on
+   hangar request or chakrit's word. (`main` is current through `0e880ee`.)
 2. ~~Publish 0.1.0~~ — DONE (live on crates.io). Next release: bump version first.
 3. **Which tmux to pin** (`TARGET_TMUX` SHA) + the **container Dockerfile** that builds it —
    needed to make integration reproducible beyond the host's tmux 3.6b. The container ADR
