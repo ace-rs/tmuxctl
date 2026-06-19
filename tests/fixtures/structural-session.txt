@@ -1,0 +1,23 @@
+%begin 1781832544 346 0
+%end 1781832544 346 0
+%window-add @0
+%sessions-changed
+%session-changed $0 cap
+%window-renamed @0 a/tmuxctl
+%begin 1781832544 353 1
+%end 1781832544 353 1
+%begin 1781832544 354 1
+%end 1781832544 354 1
+%begin 1781832544 355 1
+%end 1781832544 355 1
+%begin 1781832544 356 1
+%end 1781832544 356 1
+%begin 1781832544 357 1
+%end 1781832544 357 1
+%session-window-changed $0 @0
+%unlinked-window-add @1
+%window-pane-changed @1 %2
+%unlinked-window-renamed @1 fixture
+%session-window-changed $0 @0
+%unlinked-window-close @1
+%exit
