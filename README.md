@@ -80,6 +80,14 @@ for incoming in engine.feed(&raw_tmux_bytes) {
 
 ## Documentation
 
+**Guides** (start here) in [`docs/guides/`](docs/guides/):
+[getting-started](docs/guides/getting-started.md) ·
+[tmux concepts](docs/guides/tmux-concepts.md) ·
+[cookbook & FAQ](docs/guides/cookbook.md) ·
+[reference](docs/guides/reference.md).
+
+Deeper material:
+
 - [`docs/spec/overview.md`](docs/spec/overview.md) — the protocol contract: transport,
   reply framing, output escaping, the notification set, layout strings, the API sketch.
 - [`docs/reference/tmux-source-map.md`](docs/reference/tmux-source-map.md) — a navigable
