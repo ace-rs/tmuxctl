@@ -27,6 +27,30 @@ impl Default for SpawnOpts {
 }
 
 impl SpawnOpts {
+    /// Start from the defaults (`tmux -C new-session -A`, default server). `SpawnOpts`
+    /// is `#[non_exhaustive]`, so build it through these setters rather than a literal.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set the tmux binary to run.
+    pub fn program(mut self, program: impl Into<String>) -> Self {
+        self.program = program.into();
+        self
+    }
+
+    /// Run on a dedicated server socket (`-L`) — use this for test isolation.
+    pub fn socket(mut self, socket: impl Into<String>) -> Self {
+        self.socket = Some(socket.into());
+        self
+    }
+
+    /// Attach-or-create this named session (`-s`, with `new-session -A`).
+    pub fn session(mut self, session: impl Into<String>) -> Self {
+        self.session = Some(session.into());
+        self
+    }
+
     /// The argv after the program name: `[-L <socket>] -C new-session -A [-s <session>]`.
     /// Control mode (`-C`), never `-CC`.
     pub fn argv(&self) -> Vec<String> {
