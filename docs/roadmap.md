@@ -141,8 +141,10 @@ Thin, typed wrappers over a raw `command(&str)` escape hatch (which stays primar
 
 - **DONE (`8355314`):** `send_keys` (`send-keys -H` hex bytes) and `resize` (`refresh-client
   -C <cols>x<rows>`).
-- Open: per-window resize (`@w:<wxh>`); flow control (`refresh-client -f pause-after=`,
-  `-A '%p:continue'`); layout push (`select-layout` with a regenerated checksum).
+- **DONE (`7ecaf63`):** `select_layout` (`select-layout -t @<w>` with a regenerated checksum
+  via `to_layout_string()`) on all three drivers; tmux arbitrates validity (`%error`).
+- Open: per-window resize (`refresh-client -C @<w>:<wxh>`); flow control (`refresh-client -f
+  pause-after=`, `-A '%p:continue'`).
 - Open question: how much command surface to type vs. leaving raw primary — typed the two
   high-use ones, defer the rest.
 
