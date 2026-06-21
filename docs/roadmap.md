@@ -99,8 +99,11 @@ Landed (`e45a6b9`, `5cf4d77`): the full notification set + `LayoutChange` carryi
 `visible_layout`/`flags`, and the reply control-flag. Caveat: `%client-detached`,
 `%paste-buffer-changed`, `%paste-buffer-deleted` exist in tmux but are intentionally left to
 `Notification::Unknown` for now (not in hangar's pinned set) — "complete" means the pinned
-set, not every tmux line. `Layout` does not yet parse 3.7 floating-pane `<…>` sections —
-tracked gap, add when targeting that.
+set, not every tmux line. `Layout` is tiled-only (no `<…>` float sections) — **correct for the
+pinned 3.6b target, which has no floating panes**, not a gap. Native float parsing is deferred for
+now (3.6b has none; 3.7's are alpha) and lands in a future tmuxctl as the target bumps; the overlay
+effect stays hangar's to composite client-side meanwhile. See
+[the target ADR](decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md).
 
 ## Phase 1 — Runtime decision (RESOLVED)
 
@@ -141,8 +144,12 @@ Thin, typed wrappers over a raw `command(&str)` escape hatch (which stays primar
 
 Per [the lock-step ADR](decisions/2026-06-18-lock-step-tmux-and-robustness.md), there is **no
 version-gating**: target one pinned tmux (commit SHA), produce strictly, accept liberally,
-let tmux be the compat arbiter. This phase is just: record the pinned `TARGET_TMUX` ref and
-expose detected version as telemetry. No per-version branches.
+let tmux be the compat arbiter. **Pinned target resolved (2026-06-21): `TARGET_TMUX` = tmux
+`3.6b` / `8f3f14f5`** (see
+[the target ADR](decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md)). This phase is
+now just: surface that ref as a constant + expose detected version as telemetry. No per-version
+branches. **Follow-up fix-slice:** re-anchor the source map's line numbers from `next-3.7` to
+3.6b (algorithms/format strings hold; only line numbers + the `<…>` float section drift).
 
 ## Phase 5 — Regression net & integration
 

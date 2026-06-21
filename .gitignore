@@ -10,6 +10,9 @@ Thumbs.db
 /target/
 **/*.rs.bk
 
+# tmux verbose/debug logs (tmux -v artifacts from integration/transcript runs)
+tmux-*.log
+
 # ace-connect inbox logs
 .inbox.log
 .ace-connect-inbox.log

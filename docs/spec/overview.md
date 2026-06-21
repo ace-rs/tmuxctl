@@ -11,7 +11,7 @@ drives it; so could anyone building a Rust tmux front-end.
 
 Each wire detail below is backed by the tmux C source. See
 [`../reference/tmux-source-map.md`](../reference/tmux-source-map.md) for the exact functions
-and format strings (clone at `~/Documents/chakrit/tmux`, version next-3.7).
+and format strings (clone at `~/Documents/chakrit/tmux`, pinned target tmux 3.6b).
 
 ## Why a separate crate
 
@@ -33,7 +33,8 @@ and format strings (clone at `~/Documents/chakrit/tmux`, version next-3.7).
 - Command send with **reply correlation** (`%begin`/`%end`/`%error` matched by
   command-number) returning per-command futures.
 - **Octal-decode** `%output` / `%extended-output` payloads to raw bytes.
-- Parse tmux **layout strings** into a typed tree; regenerate + checksum them.
+- Parse tmux **layout strings** into a typed tree; regenerate + checksum them. (Tiled layouts;
+  the 3.7 `<…>` floating-pane section is out of the pinned 3.6b target — deferred.)
 - Typed helpers for input (`send-keys`), resize (`refresh-client -C`), and flow control,
   plus a raw-command escape hatch.
 - tmux version detection; tolerate-and-log unknown `%`-lines.
@@ -144,6 +145,9 @@ bytes and decode at the emulator, never at the line reader. (`decode_output` pre
   consumes one row/column between children (the `+1` accounting in `layout_check`).
 - Example: `bb62,159x48,0,0{79x48,0,0,79x48,80,0}` → a 159×48 window split into two
   side-by-side 79-wide panes.
+- **Floating panes** (a `<…>` section after the tiled root) are a 3.7 feature — **out of the
+  pinned 3.6b target**, so `Layout` is tiled-only and deferred until a target bump. See the
+  [target ADR](../decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md).
 
 ## Input, resize, flow control
 

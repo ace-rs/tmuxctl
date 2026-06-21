@@ -8,3 +8,11 @@ a new ADR that references the old one.
 
 - [`2026-06-18-crate-name-license-and-shape.md`](2026-06-18-crate-name-license-and-shape.md)
   — crate name `tmuxctl`, dual MIT/Apache-2.0, standalone publishable crate, tokio async.
+- [`2026-06-18-sans-io-core-feature-gated-drivers.md`](2026-06-18-sans-io-core-feature-gated-drivers.md)
+  — sans-IO core, no mandatory runtime; feature-gated `blocking`/`tokio`/`smol` drivers.
+- [`2026-06-18-lock-step-tmux-and-robustness.md`](2026-06-18-lock-step-tmux-and-robustness.md)
+  — one pinned tmux, produce strictly / accept liberally, no version matrix or gating.
+- [`2026-06-18-container-test-strategy.md`](2026-06-18-container-test-strategy.md)
+  — four-layer test pyramid; containerized real-tmux integration doubles as fixture generator.
+- [`2026-06-21-target-tmux-3.6b-floats-out-of-scope.md`](2026-06-21-target-tmux-3.6b-floats-out-of-scope.md)
+  — pin stable tmux `3.6b`; native floats deferred (composited client-side in hangar for now).

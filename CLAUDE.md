@@ -28,8 +28,10 @@ driver `Client` around the core. See [docs/roadmap.md](docs/roadmap.md).
   the checksum algorithm, and escaping rules.
 - [docs/decisions/](docs/decisions/) — dated ADRs.
 
-The tmux C source itself is a local clone at `~/Documents/chakrit/tmux` (version next-3.7).
-Port the protocol against it and against iTerm2's `TmuxGateway`/`TmuxLayoutParser`.
+The tmux C source itself is a local clone at `~/Documents/chakrit/tmux`. The pinned target is
+**tmux 3.6b** (`TARGET_TMUX` = tag `8f3f14f5`) — see
+[the target ADR](docs/decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md). Port the
+protocol against that tag and against iTerm2's `TmuxGateway`/`TmuxLayoutParser`.
 
 ## Conventions
 

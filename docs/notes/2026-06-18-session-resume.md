@@ -36,9 +36,9 @@ the next release.
 1. **Push** the 2 unpushed doc commits (`b4167bd`+`67f6c7d`, the guides — additive). Push on
    hangar request or chakrit's word. (`main` is current through `0e880ee`.)
 2. ~~Publish 0.1.0~~ — DONE (live on crates.io). Next release: bump version first.
-3. **Which tmux to pin** (`TARGET_TMUX` SHA) + the **container Dockerfile** that builds it —
-   needed to make integration reproducible beyond the host's tmux 3.6b. The container ADR
-   specifies the shape; the version/base choice is yours.
+3. ~~Which tmux to pin~~ — **RESOLVED 2026-06-21: `TARGET_TMUX` = tmux 3.6b (`8f3f14f5`)**, see
+   the target ADR. Still open: the **container Dockerfile** that builds that pinned tmux, to make
+   integration reproducible beyond the host's 3.6b (the container ADR specifies the shape).
 4. **More typed helpers?** (per-window resize, flow control, layout push) — hangar-driven;
    build when a consumer needs them.
 
@@ -61,4 +61,5 @@ Workflow: CLAUDE.md + [`../guides/slice-loop.md`](../guides/slice-loop.md).
 - Async drivers don't reuse `blocking`'s `Mutex<Shared>` (held across a write) — they use a
   per-task actor (`select!` / `smol::future::or`).
 - `SpawnOpts` is `#[non_exhaustive]` → external crates must use the builder, not a literal.
-- 3.7 floating-pane `<…>` layout sections not parsed yet (tracked gap).
+- 3.7 floating-pane `<…>` layout sections not parsed — **deferred, not a gap**: out of the
+  pinned 3.6b target (3.6b has no floats). Re-grounded 2026-06-21; see the target ADR.

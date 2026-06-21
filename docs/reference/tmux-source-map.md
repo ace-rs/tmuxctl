@@ -6,8 +6,11 @@ pane-output escaping into the `tmuxctl` Rust crate. It records the real function
 names, exact format strings, and the verified algorithms — not a tutorial.
 
 - **tmux clone:** `/Users/chakrit/Documents/chakrit/tmux`
-- **Version:** `next-3.7` (`git describe`: `3.7-rc-86-gc6b8ad6e`,
-  CHANGES header "FROM 3.6b TO 3.7")
+- **Version (target):** `3.6b` — `TARGET_TMUX` = tag `8f3f14f5`, the pinned target (see
+  [the target ADR](../decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md)). The line
+  numbers below were captured against `next-3.7` (`3.7-rc-86-gc6b8ad6e`) and are **pending
+  re-anchoring to 3.6b**; the algorithms and format strings hold across both — only line numbers
+  and the `<…>` float section drift.
 - **Spec cross-reference:** `docs/spec/overview.md` (the protocol spec this map feeds)
 
 ⚠️ Line numbers below are **hints, not contracts** — they drift across versions and
@@ -271,7 +274,7 @@ already-assembled body string including any `<…>` floating-pane section.
   - `LAYOUT_TOPBOTTOM` → `[ … ]` (children laid out top-to-bottom)
   Children are comma-joined; the trailing comma is overwritten with the closing
   bracket (`buf[strlen(buf) - 1] = brackets[0];`).
-- Floating panes (3.7 addition): appended after the tiled root inside `< … >`
+- Floating panes (3.7 addition — **deferred; we target 3.6b**, which has none; lands when the target bumps): appended after the tiled root inside `< … >`
   (layout-custom.c:71–84), comma-joined, trailing comma → `>`.
 
 A typical two-pane horizontal split dumps as e.g.
