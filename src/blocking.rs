@@ -238,9 +238,12 @@ mod tests {
             let mut buf = [0u8; 256];
             let n = sock.read(&mut buf).expect("read command");
             let got = std::str::from_utf8(&buf[..n]).expect("utf8 command");
-            assert_eq!(got.trim_end(), expected.as_str());
+            // Reply before asserting: a mismatched command then fails the assertion
+            // cleanly (surfaced via join()) instead of hanging the client, which would
+            // otherwise block forever waiting for a reply the panicking fake never sent.
             sock.write_all(b"%begin 1 1 1\n%end 1 1 1\n")
                 .expect("write reply");
+            assert_eq!(got.trim_end(), expected.as_str());
         })
     }
 
