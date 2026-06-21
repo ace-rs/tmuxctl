@@ -16,7 +16,8 @@ use std::thread::{self, JoinHandle};
 
 use crate::commands;
 use crate::engine::{CommandError, CommandId, CommandOutput, Engine, Incoming};
-use crate::ids::PaneId;
+use crate::ids::{PaneId, WindowId};
+use crate::layout::Layout;
 use crate::notification::Notification;
 use crate::spawn::SpawnOpts;
 
@@ -142,6 +143,13 @@ impl Client {
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), CommandError> {
         self.command(&commands::resize(cols, rows)).map(drop)
     }
+
+    /// Push a layout onto a window. tmux arbitrates validity; a rejected layout
+    /// surfaces as [`CommandError::Failed`], not a client-side check.
+    pub fn select_layout(&self, window: WindowId, layout: &Layout) -> Result<(), CommandError> {
+        self.command(&commands::select_layout(window, layout))
+            .map(drop)
+    }
 }
 
 impl Drop for Client {
@@ -210,6 +218,7 @@ fn disconnect(shared: &Arc<Mutex<Shared>>) {
 mod tests {
     use super::*;
     use crate::ids::WindowId;
+    use crate::layout::Layout;
     use std::os::unix::net::UnixStream;
 
     /// Split one end of a socket pair into the boxed reader/writer a `Client` wants.
@@ -220,12 +229,16 @@ mod tests {
     }
 
     /// A fake tmux: read one command line, assert it equals `expected`, reply `%end`.
-    fn fake_tmux_expecting(mut sock: UnixStream, expected: &'static str) -> thread::JoinHandle<()> {
+    fn fake_tmux_expecting(
+        mut sock: UnixStream,
+        expected: impl Into<String>,
+    ) -> thread::JoinHandle<()> {
+        let expected = expected.into();
         thread::spawn(move || {
             let mut buf = [0u8; 256];
             let n = sock.read(&mut buf).expect("read command");
             let got = std::str::from_utf8(&buf[..n]).expect("utf8 command");
-            assert_eq!(got.trim_end(), expected);
+            assert_eq!(got.trim_end(), expected.as_str());
             sock.write_all(b"%begin 1 1 1\n%end 1 1 1\n")
                 .expect("write reply");
         })
@@ -303,6 +316,23 @@ mod tests {
 
         let fake = fake_tmux_expecting(tmux.try_clone().expect("clone"), "refresh-client -C 80x24");
         client.resize(80, 24).expect("resize");
+
+        fake.join().expect("fake tmux");
+        drop(tmux);
+    }
+
+    #[test]
+    fn select_layout_emits_layout_string() {
+        let (tmux, client_io) = UnixStream::pair().expect("socket pair");
+        let (reader, writer) = client_over(client_io);
+        let client = Client::with_transport(reader, writer);
+
+        let layout = Layout::parse("159x48,0,0{79x48,0,0,0,79x48,80,0,1}").expect("parse");
+        let expected = format!("select-layout -t @2 {}", layout.to_layout_string());
+        let fake = fake_tmux_expecting(tmux.try_clone().expect("clone"), expected);
+        client
+            .select_layout(WindowId(2), &layout)
+            .expect("select_layout");
 
         fake.join().expect("fake tmux");
         drop(tmux);

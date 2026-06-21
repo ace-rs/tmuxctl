@@ -15,7 +15,8 @@ use smol::process::{Child, Command};
 
 use crate::commands;
 use crate::engine::{CommandError, CommandId, CommandOutput, Engine, Incoming};
-use crate::ids::PaneId;
+use crate::ids::{PaneId, WindowId};
+use crate::layout::Layout;
 use crate::notification::Notification;
 use crate::spawn::SpawnOpts;
 
@@ -104,6 +105,18 @@ impl SmolClient {
     /// Set this control client's size.
     pub async fn resize(&self, cols: u16, rows: u16) -> Result<(), CommandError> {
         self.command(&commands::resize(cols, rows)).await.map(drop)
+    }
+
+    /// Push a layout onto a window. tmux arbitrates validity; a rejected layout
+    /// surfaces as [`CommandError::Failed`], not a client-side check.
+    pub async fn select_layout(
+        &self,
+        window: WindowId,
+        layout: &Layout,
+    ) -> Result<(), CommandError> {
+        self.command(&commands::select_layout(window, layout))
+            .await
+            .map(drop)
     }
 }
 
