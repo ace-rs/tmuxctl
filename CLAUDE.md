@@ -33,6 +33,11 @@ The tmux C source itself is a local clone at `~/Documents/chakrit/tmux`. The pin
 [the target ADR](docs/decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md). Port the
 protocol against that tag and against iTerm2's `TmuxGateway`/`TmuxLayoutParser`.
 
+When assessing what changed between tmux versions, compare the full symbol set (e.g. `comm` over
+the `%`-notification strings in `control*.c`) — never infer "new" from `git diff` +/− lines,
+since refactored lines read as added and will mislead. (3.6b↔3.7: notification set identical;
+`<…>` floating panes are the only wire delta.)
+
 ## Conventions
 
 - **Rust**, edition 2024, toolchain pinned in `rust-toolchain.toml` (1.96.0).
