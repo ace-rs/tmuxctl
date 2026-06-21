@@ -1,29 +1,32 @@
 # tmuxctl roadmap
 
-Sequencing from the current pre-`Client` state to a published crate that covers the entire
-tmux control-mode signal surface, then to the broader tmux-management utilities layered on
-top. Living doc — update as slices land. The contract it builds toward is
+Sequencing from the published **v0.1.0** protocol crate toward complete tmux control-mode
+coverage, then to the broader tmux-management utilities layered on top. Living doc — update as
+slices land. The contract it builds toward is
 [`spec/overview.md`](spec/overview.md); the wire details are in
 [`reference/tmux-source-map.md`](reference/tmux-source-map.md).
 
 ## Where it stands
 
-A usable **end-to-end blocking client** is in place (50 tests, clippy+fmt clean, one dep,
-`thiserror`):
+**Published v0.1.0** — an end-to-end client across three runtime drivers over one sans-IO core
+(~54 tests on the default build, clippy+fmt clean; one default dep, `thiserror`, with `tokio`
+and `smol` behind optional features):
 
 - **Pure sans-IO core:** id newtypes, `decode_output(&[u8])`, `Layout` parse/render/checksum;
   the line `Parser` (`&[u8]`, reply framing + control flag, full `#[non_exhaustive]`
   `Notification` set, dropped-`%end` recovery); the correlation `Engine` (`feed(&[u8])`
   framer, `on_eof()`, positional-FIFO correlation with a monotonic-number tripwire).
   `WindowFlags`, `CommandOutput`, `CommandError`.
-- **`blocking` driver `Client`** (default feature, std-only): `spawn(SpawnOpts)` /
-  `command()` / `send_keys` / `resize` / events `Receiver` / detach+reap teardown.
-  Unit-tested over a `UnixStream` pair — no real tmux.
+- **Three drivers over the core:** `blocking` `Client` (default, std-only) plus async
+  `SmolClient` / `TokioClient` (per-task actor; no lock held across `.await`). All tested over
+  an injected transport (`UnixStream` / in-memory duplex) — no real tmux needed.
+- **Test pyramid (Phase 5) substantially in place:** pure units; transcript replay of a real
+  3.6b capture through `Engine::feed`; injected-transport driver tests; `#[ignore]`d real-tmux
+  integration (`scripts/integration.sh`, host tmux). Shipped via `scripts/release.sh`.
 
-Next (all unblocked unless noted): the pinned-tmux container for reproducible integration
-(gated on the container test-strategy decision); the version-guard constant + version telemetry
-(lock-step); more typed command helpers. The `blocking`/`smol`/`tokio` drivers, the transcript
-regression net, and publishing have all landed.
+Next (all unblocked unless noted): the **pinned-tmux container** for reproducible integration
+(the one remaining Phase 5 gap); the **`TARGET_TMUX` constant + version telemetry** (Phase 4);
+**more typed command helpers** — layout push, flow control, per-window resize (Phase 3).
 
 ## Audit 1 — fix-slices (2026-06-18)
 
@@ -154,21 +157,34 @@ now just: surface that ref as a constant + expose detected version as telemetry.
 branches. **Follow-up fix-slice:** re-anchor the source map's line numbers from `next-3.7` to
 3.6b (algorithms/format strings hold; only line numbers + the `<…>` float section drift).
 
-## Phase 5 — Regression net & integration
+## Phase 5 — Regression net & integration — MOSTLY DONE
 
-Specified by [the container test-strategy ADR](decisions/2026-06-18-container-test-strategy.md):
-the four-layer pyramid (pure → transcript replay → injected-transport driver → containerized
-real-tmux integration). Integration keys off `TMUXCTL_TMUX_BIN`, is `#[ignore]`d, runs via a
-local `scripts/integration.sh` (no Actions), and **doubles as the fixture generator** for the
-fast `Engine::feed` replay net (`smoke` golden files).
+The four-layer pyramid from
+[the container test-strategy ADR](decisions/2026-06-18-container-test-strategy.md) is built
+except its top rung:
+
+- **Pure units** — core types, parser, engine, layout, decode. DONE.
+- **Transcript replay** — `tests/fixtures/structural-session.txt` (a real 3.6b `tmux -C`
+  capture) replayed through `Engine::feed`, asserting the exact `Notification` stream and that
+  no line falls to `Unknown` (`tests/transcript.rs`). DONE. (Asserts in-Rust; the ADR's
+  `smoke` golden-file flavor was not adopted — optional, revisit if fixtures multiply.)
+- **Injected-transport driver** — `with_transport` over `UnixStream` / duplex for all three
+  drivers. DONE.
+- **Real-tmux integration** — `tests/integration.rs`: `#[ignore]`d, `TMUXCTL_TMUX_BIN`-keyed,
+  per-test socket isolation, run via `scripts/integration.sh` (no Actions). DONE against the
+  **host** tmux.
+
+**Remaining gap:** the **pinned-tmux container** (a Dockerfile building 3.6b) so integration is
+reproducible off-host, plus the fixture-generator loop that regenerates transcripts from it. A
+couple more fixtures would also widen replay coverage.
 
 ## Phase 6 — Publishing — DONE
 
 **v0.1.0 released** (`81eb4de`): README usage section, `scripts/release.sh` (gate → tag →
 `gh release` → `cargo publish`, idempotent re-run), live on crates.io + a GitHub release at
-tag `v0.1.0`. Bump the version (`cargo set-version`) before the next release. Open: the
-the pinned-tmux container remains for a later release (the `blocking`/`smol`/`tokio` drivers
-have all landed).
+tag `v0.1.0`. Bump the version (`cargo set-version`) before the next release. The
+`blocking`/`smol`/`tokio` drivers have all landed since; the pinned-tmux container (Phase 5)
+remains for a later release.
 
 ## Beyond the protocol layer — tmux management utilities
 
@@ -180,6 +196,9 @@ persistence/restore, multi-session supervision. Defer concrete design until Phas
 
 ## Critical path
 
-Phase 0 (now) → Phase 1 (decision) → Phase 2 → 3 → 4 → 5 → 6 → utilities. Phases 0 and the
-regression fixtures (part of 5) can proceed in parallel with the Phase 1 decision since both
-are pure and runtime-free.
+Phases 0 → 1 → 2 → 6 are **DONE** (notification coverage, runtime decision, all three drivers,
+published v0.1.0); Phase 5 is **mostly done** (pyramid built, container pending). Remaining, in
+rough priority: finish **Phase 5** (pinned-tmux container) and **Phase 4** (`TARGET_TMUX`
+constant + version telemetry) to make the lock-step net reproducible, then **Phase 3** typed
+helpers (layout push, flow control, per-window resize) as consumers need them, then the
+**utilities** layer. None of the remaining work blocks the rest.
