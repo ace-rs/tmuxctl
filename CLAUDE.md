@@ -43,6 +43,10 @@ since refactored lines read as added and will mislead. (3.6b↔3.7: notification
 - **Rust**, edition 2024, toolchain pinned in `rust-toolchain.toml` (1.96.0).
 - `#![deny(warnings)]` at the crate root — rustc warnings are build errors.
 - `cargo clippy --all-targets --all-features` is a **separate done-gate**; must be clean.
+- **Run the verify gate to a file, not a pipe.** `cargo` under the `lowfat` hook buffers output
+  until exit (log looks empty mid-run ≠ hung), and a piped `| tail`/`| head` returns the pipe's
+  exit code, not cargo's. Use `cargo … > /tmp/x 2>&1; echo "exit=$?" >> /tmp/x` and read the
+  file. Never run concurrent `cargo` invocations — they contend on the build-dir lock and stall.
 - **Sans-IO core, no runtime;** runtime support is feature-gated drivers
   (`blocking`/`tokio`/`smol`) — see
   [the ADR](docs/decisions/2026-06-18-sans-io-core-feature-gated-drivers.md). Minimal
