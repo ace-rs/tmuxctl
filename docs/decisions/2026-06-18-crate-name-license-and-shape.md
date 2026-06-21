@@ -23,7 +23,9 @@ an explicit patent grant that a standalone, publishable crate benefits from. (Th
 
 **Shape: standalone, separately-publishable library.** Protocol layer only — no terminal
 emulation, no UI. Async on **tokio** with a minimal dependency tree (hand-rolled line
-parser over a framework, to keep compile time and footprint small). Developed independently
+parser over a framework, to keep compile time and footprint small). *(Superseded: the
+async-runtime choice is now a sans-IO core + feature-gated `blocking`/`smol`/`tokio` drivers —
+see the [sans-IO ADR](2026-06-18-sans-io-core-feature-gated-drivers.md).)* Developed independently
 of hangar's timeline; hangar depends on it by path during co-development, then by version
 once published. The crate never depends on hangar.
 
@@ -36,7 +38,8 @@ once published. The crate never depends on hangar.
 
 ## Open questions (from the spec, still live)
 
-- Runtime-agnostic core (expose `AsyncRead`/`AsyncWrite`) vs. tokio-only.
+- ~~Runtime-agnostic core vs. tokio-only~~ — **resolved:** sans-IO core + feature-gated drivers
+  (see the [sans-IO ADR](2026-06-18-sans-io-core-feature-gated-drivers.md)).
 - How much of tmux's command surface to type vs. leaving the raw escape hatch primary.
 - Whether to expose the format/subscription system as first-class.
 - Reconnect/resilience when the tmux server dies vs. a merely-detached control session.

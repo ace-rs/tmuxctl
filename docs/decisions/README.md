@@ -7,7 +7,8 @@ Name files `YYYY-MM-DD-short-slug.md`. Supersede rather than edit: a reversed de
 a new ADR that references the old one.
 
 - [`2026-06-18-crate-name-license-and-shape.md`](2026-06-18-crate-name-license-and-shape.md)
-  — crate name `tmuxctl`, dual MIT/Apache-2.0, standalone publishable crate, tokio async.
+  — crate name `tmuxctl`, dual MIT/Apache-2.0, standalone publishable crate. (Its "tokio
+  async" call was superseded — see the sans-IO ADR below.)
 - [`2026-06-18-sans-io-core-feature-gated-drivers.md`](2026-06-18-sans-io-core-feature-gated-drivers.md)
   — sans-IO core, no mandatory runtime; feature-gated `blocking`/`tokio`/`smol` drivers.
 - [`2026-06-18-lock-step-tmux-and-robustness.md`](2026-06-18-lock-step-tmux-and-robustness.md)

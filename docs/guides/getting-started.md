@@ -17,14 +17,14 @@ cargo add tmuxctl
 
 Runtime support is feature-gated. The default is `blocking` (std threads, no extra deps):
 
-| Feature    | Driver        | Pulls    | When                                    |
-|------------|---------------|----------|-----------------------------------------|
-| `blocking` | `Client`      | —        | default; threads, simplest              |
-| `tokio`    | `TokioClient` | `tokio`  | you're already on a tokio runtime       |
-| `smol`     | `SmolClient`  | `smol`   | you're already on a smol runtime        |
+| Feature    | Driver        | Pulls    | When                                       |
+|------------|---------------|----------|--------------------------------------------|
+| `blocking` | `Client`      | —        | default; threads, simplest                 |
+| `smol`     | `SmolClient`  | `smol`   | async — **preferred** (lighter deps)       |
+| `tokio`    | `TokioClient` | `tokio`  | async — you're already on a tokio runtime  |
 
 ```sh
-cargo add tmuxctl --no-default-features --features tokio
+cargo add tmuxctl --no-default-features --features smol
 ```
 
 The pure protocol core (parser, correlation engine, layout, decode) is always available with
@@ -68,14 +68,16 @@ lines, `Err(CommandError::Failed { lines })` is a tmux `%error`, and
 
 ## Async drivers
 
-`TokioClient` and `SmolClient` mirror the blocking API with `async fn` and an async-channel
-event receiver. They must be created and used inside their runtime:
+`SmolClient` and `TokioClient` mirror the blocking API with `async fn` and an async-channel
+event receiver. **`smol` is the recommended async driver** — a lighter dependency tree, in
+keeping with tmuxctl's minimal footprint; reach for `TokioClient` when you're already on a tokio
+runtime. Create and use them inside their runtime:
 
 ```rust,ignore
-use tmuxctl::{SpawnOpts, TokioClient};
+use tmuxctl::{SpawnOpts, SmolClient};
 
-let mut client = TokioClient::spawn(SpawnOpts::new().session("work")).await?;
-let mut events = client.events().unwrap(); // an mpsc::UnboundedReceiver
+let mut client = SmolClient::spawn(SpawnOpts::new().session("work")).await?;
+let mut events = client.events().unwrap(); // an async-channel Receiver
 let out = client.command("list-windows").await?;
 ```
 

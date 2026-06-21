@@ -77,9 +77,10 @@ for running tmux *inside* another terminal. A programmatic host wants plain `-C`
 always uses `-C`.
 
 **Which driver should I use?**
-`Client` (the default `blocking` feature) unless you're already on an async runtime — then
-`TokioClient` or `SmolClient`. All three wrap the same core; the protocol behavior is
-identical. The default build pulls no async runtime.
+`Client` (the default `blocking` feature) unless you're on an async runtime — then prefer
+`SmolClient` (lighter dependency tree), or `TokioClient` if you're already on tokio. All three
+wrap the same core; the protocol behavior is identical, and the default build pulls no async
+runtime.
 
 **Is `%output` data UTF-8?**
 No. Pane output is arbitrary bytes (a program can emit anything), so `Output.bytes` may not
@@ -108,7 +109,7 @@ and commands.
 
 **Can I use it without an async runtime, or with a runtime it doesn't support?**
 Yes. The sans-IO `Engine` (and `Parser`, `Layout`, `decode_output`) is pure and runtime-free.
-Wrap it with your own read/write loop — that's all the `blocking`/`tokio`/`smol` drivers are.
+Wrap it with your own read/write loop — that's all the `blocking`/`smol`/`tokio` drivers are.
 
 **Is the client `Send`/thread-safe?**
 The blocking `Client` runs its reader on an internal thread and hands you a `Receiver` to

@@ -20,9 +20,10 @@ A usable **end-to-end blocking client** is in place (50 tests, clippy+fmt clean,
   `command()` / `send_keys` / `resize` / events `Receiver` / detach+reap teardown.
   Unit-tested over a `UnixStream` pair — no real tmux.
 
-Next (all unblocked unless noted): real-tmux integration tests (gated on the container
-test-strategy decision); the `tokio`/`smol` drivers; version guard (lock-step); the
-transcript regression net; publishing.
+Next (all unblocked unless noted): the pinned-tmux container for reproducible integration
+(gated on the container test-strategy decision); the version-guard constant + version telemetry
+(lock-step); more typed command helpers. The `blocking`/`smol`/`tokio` drivers, the transcript
+regression net, and publishing have all landed.
 
 ## Audit 1 — fix-slices (2026-06-18)
 
@@ -89,9 +90,10 @@ regression test (`b25ca60`).
 
 **Audit 2 fully resolved.** Audit 3 due after ~2–3 more feature slices.
 
-Async-driver note (for the future `tokio`/`smol` slice): `blocking`'s single `Mutex<Shared>`
-is held across `writer.write_all`, which won't survive `.await` — an async driver needs an
-async-aware mutex or a dedicated writer task, not a verbatim reuse of `Shared`.
+Async-driver note (it informed the `tokio`/`smol` drivers that have since landed): `blocking`'s
+single `Mutex<Shared>` is held across `writer.write_all`, which won't survive `.await` — an
+async driver needs an async-aware mutex or a dedicated writer task, not a verbatim reuse of
+`Shared`. Both async drivers use a per-task actor instead.
 
 ## Phase 0 — Complete notification coverage — DONE
 
@@ -126,8 +128,9 @@ with a monotonic-number tripwire.
 The **`tokio` driver** (`TokioClient`) has landed too (`2bbc518`) behind the `tokio` feature —
 actor pattern (owner task `select!`s commands vs. stdout; no lock across `.await`), tested
 over `tokio::io::duplex`. Shared `SpawnOpts`/argv (`spawn.rs`) and command-string builders
-(`commands.rs`) keep the two drivers DRY. **Open: the `smol` driver** (mirrors `TokioClient`
-on `async-process`/`futures-lite`).
+(`commands.rs`) keep the drivers DRY. The **`smol` driver** (`SmolClient`) has **also landed**
+behind the `smol` feature — the same actor pattern over `async-process`/`futures-lite`, tested
+over an in-memory duplex (`cargo test --features smol` green). All three drivers now ship.
 
 ## Phase 3 — Typed command helpers (partial)
 
@@ -164,7 +167,8 @@ fast `Engine::feed` replay net (`smoke` golden files).
 **v0.1.0 released** (`81eb4de`): README usage section, `scripts/release.sh` (gate → tag →
 `gh release` → `cargo publish`, idempotent re-run), live on crates.io + a GitHub release at
 tag `v0.1.0`. Bump the version (`cargo set-version`) before the next release. Open: the
-`tokio`/`smol` drivers and the pinned-tmux container remain for later releases.
+the pinned-tmux container remains for a later release (the `blocking`/`smol`/`tokio` drivers
+have all landed).
 
 ## Beyond the protocol layer — tmux management utilities
 

@@ -163,28 +163,33 @@ bytes and decode at the emulator, never at the line reader. (`decode_output` pre
 
 ## API sketch (Rust)
 
-Async on **tokio**; minimal dependency tree (tokio, `bytes`; hand-rolled line parser over a
-framework, to keep compile time and footprint small). Names indicative, not final; the
-in-tree types (`PaneId`, `Notification`, `Layout`) already follow this shape.
+A **sans-IO core** (pure, runtime-free) wrapped by feature-gated drivers — `blocking` (default,
+std-only) plus async `SmolClient` / `TokioClient`. **Prefer `smol`** for new async consumers — a
+lighter dependency tree, in keeping with this crate's minimal-footprint goal; `tokio` is equally
+supported when you are already on it. Minimal deps throughout (hand-rolled line parser, no async
+framework in the core). The in-tree types already follow the shape below.
 
 ```rust
 pub struct PaneId(pub u32);     // %<n>
 pub struct WindowId(pub u32);   // @<n>
 pub struct SessionId(pub u32);  // $<n>
 
-pub struct Client { /* child process + writer + pending-command queue */ }
+// Default `blocking` driver — std threads, no async runtime.
+pub struct Client { /* child + writer + correlation engine + reader thread */ }
 
 impl Client {
-    pub async fn spawn(args: SpawnOpts) -> Result<Client>;
-    pub fn events(&self) -> impl Stream<Item = Notification>;
-    pub async fn command(&self, cmd: &str) -> Result<CommandOutput, CommandError>;
+    pub fn spawn(opts: SpawnOpts) -> std::io::Result<Client>;
+    pub fn events(&mut self) -> Option<Receiver<Notification>>;   // taken once
+    pub fn command(&self, cmd: &str) -> Result<CommandOutput, CommandError>;
     // typed helpers over `command`:
-    pub async fn send_keys_literal(&self, pane: PaneId, bytes: &[u8]) -> Result<()>;
-    pub async fn resize(&self, win: WindowId, cols: u16, rows: u16) -> Result<()>;
-    pub async fn detach(self) -> Result<()>;   // empty-line teardown
+    pub fn send_keys(&self, pane: PaneId, keys: &[u8]) -> Result<(), CommandError>;
+    pub fn resize(&self, cols: u16, rows: u16) -> Result<(), CommandError>;
 }
 
-pub fn decode_output(escaped: &str) -> Vec<u8>;   // \ooo octal → raw bytes
+// Async drivers mirror `Client` with `async fn`: `SmolClient` (preferred) / `TokioClient`.
+
+// Pure sans-IO core (no runtime, no feature needed):
+pub fn decode_output(escaped: &[u8]) -> Vec<u8>;   // \ooo octal → raw bytes
 ```
 
 ## Implementation guidance
@@ -231,7 +236,9 @@ In brief:
 ## Open questions
 
 - Whether to publish before or alongside the first consumer release.
-- Runtime-agnostic core (expose `AsyncRead`/`AsyncWrite`) vs. tokio-only.
+- ~~Runtime-agnostic core vs. tokio-only~~ — **resolved:** sans-IO core + feature-gated
+  `blocking`/`smol`/`tokio` drivers (see the
+  [sans-IO ADR](../decisions/2026-06-18-sans-io-core-feature-gated-drivers.md)).
 - How much of tmux's command surface to type vs. leaving the raw escape hatch primary.
 - Whether to expose the format/subscription system as first-class or leave it to raw
   `refresh-client -B`.

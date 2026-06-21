@@ -12,9 +12,9 @@ correlation and output unescaping; `tmuxctl` fills that gap on its own release c
 
 > **Status: working, pre-1.0.** The sans-IO core (line `Parser`, correlation `Engine`,
 > `Layout`, `decode_output`, the full `Notification` set) and a usable `Client` are in place,
-> with three runtime drivers (`blocking`, `tokio`, `smol`) over the one core. Tested by unit
+> with three runtime drivers (`blocking`, `smol`, `tokio`) over the one core. Tested by unit
 > tests, transcript replay of a real `tmux -C` capture, and live integration against tmux.
-> Not yet published to crates.io.
+> Published to crates.io (`v0.1.0`).
 
 ## Scope
 
@@ -31,11 +31,11 @@ command send with `%begin`/`%end`/`%error` reply correlation; octal-decode of
 
 Three runtime drivers wrap one sans-IO core; pick by Cargo feature.
 
-| Feature    | Driver         | Notes                                            |
-|------------|----------------|--------------------------------------------------|
-| `blocking` | `Client`       | std threads, no extra deps. **Default.**         |
-| `tokio`    | `TokioClient`  | async; opt-in (pulls `tokio`).                   |
-| `smol`     | `SmolClient`   | async; opt-in (pulls `smol`).                    |
+| Feature    | Driver        | Notes                                               |
+|------------|---------------|-----------------------------------------------------|
+| `blocking` | `Client`      | std threads, no extra deps. **Default.**            |
+| `smol`     | `SmolClient`  | async; **preferred** — lighter deps (pulls `smol`). |
+| `tokio`    | `TokioClient` | async; opt-in (pulls `tokio`).                      |
 
 Blocking client — spawn a control session, run a command, react to notifications:
 
@@ -61,7 +61,8 @@ client.resize(120, 40)?;
 # Ok::<(), tmuxctl::CommandError>(())
 ```
 
-The async drivers mirror this with `async fn` and an `mpsc`/`channel` events receiver.
+The async drivers mirror this with `async fn` and an async-channel events receiver — prefer
+`SmolClient` (lighter deps); `TokioClient` if you're already on tokio.
 
 Sans-IO core — drive the protocol yourself over any transport (this is what the drivers
 wrap, and how the parser is tested without a process):
@@ -100,7 +101,7 @@ Deeper material:
 
 ```sh
 cargo test                                       # units + transcript replay (fast, no tmux)
-cargo test --all-features                         # also the tokio + smol drivers
+cargo test --all-features                         # also the smol + tokio drivers
 cargo clippy --all-targets --all-features        # done-gate, must be clean
 cargo fmt
 ./scripts/integration.sh                          # live tmux round-trip (#[ignore]d otherwise)

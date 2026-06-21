@@ -12,7 +12,7 @@ the design record.
   cargo doc --all-features --open
   ```
 
-The public surface: `Client` / `TokioClient` / `SmolClient` (drivers), `SpawnOpts`, the
+The public surface: `Client` / `SmolClient` / `TokioClient` (drivers), `SpawnOpts`, the
 sans-IO `Engine` + `Incoming`, `Parser` + `Event` + `Reply`, `Notification` + `WindowFlags`,
 `Layout`, `PaneId`/`WindowId`/`SessionId`, `CommandOutput`/`CommandError`, `decode_output`,
 and `Error`/`Result`.
