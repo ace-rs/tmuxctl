@@ -53,7 +53,7 @@ impl Layout {
             }
         }
 
-        let (layout, rest) = parse_node(body)?;
+        let (layout, rest) = parse_node(body, 0)?;
         if !rest.is_empty() {
             return Err(Error::Layout(format!(
                 "trailing input after layout: {rest:?}"
@@ -143,7 +143,19 @@ fn split_checksum(s: &str) -> (Option<u16>, &str) {
     }
 }
 
-fn parse_node(s: &str) -> Result<(Layout, &str)> {
+/// Maximum split-nesting depth [`Layout::parse`] descends before rejecting input.
+/// Recursive descent over an untrusted layout string would otherwise overflow the
+/// native stack — an uncatchable process abort — on pathological nesting (`{{{…`).
+/// Real tmux layouts nest only a handful deep, so this bound is never hit in practice.
+const MAX_LAYOUT_DEPTH: usize = 128;
+
+fn parse_node(s: &str, depth: usize) -> Result<(Layout, &str)> {
+    if depth > MAX_LAYOUT_DEPTH {
+        return Err(Error::Layout(format!(
+            "layout nesting exceeds maximum depth ({MAX_LAYOUT_DEPTH})"
+        )));
+    }
+
     let (w, s) = take_number(s, 'x')?;
     let (h, s) = take_number(s, ',')?;
     let (x, s) = take_number(s, ',')?;
@@ -151,7 +163,7 @@ fn parse_node(s: &str) -> Result<(Layout, &str)> {
 
     match sep {
         Some('{') => {
-            let (children, s) = parse_children(s, '}')?;
+            let (children, s) = parse_children(s, '}', depth + 1)?;
             Ok((
                 Layout::SplitH {
                     w,
@@ -164,7 +176,7 @@ fn parse_node(s: &str) -> Result<(Layout, &str)> {
             ))
         }
         Some('[') => {
-            let (children, s) = parse_children(s, ']')?;
+            let (children, s) = parse_children(s, ']', depth + 1)?;
             Ok((
                 Layout::SplitV {
                     w,
@@ -186,10 +198,10 @@ fn parse_node(s: &str) -> Result<(Layout, &str)> {
     }
 }
 
-fn parse_children(mut s: &str, close: char) -> Result<(Vec<Layout>, &str)> {
+fn parse_children(mut s: &str, close: char, depth: usize) -> Result<(Vec<Layout>, &str)> {
     let mut children = Vec::new();
     loop {
-        let (child, rest) = parse_node(s)?;
+        let (child, rest) = parse_node(s, depth)?;
         children.push(child);
         s = rest;
 
@@ -305,5 +317,16 @@ mod tests {
     #[test]
     fn rejects_trailing_garbage() {
         assert!(Layout::parse("80x24,0,0,1xyz").is_err());
+    }
+
+    #[test]
+    fn rejects_pathologically_nested_layout() {
+        // Past MAX_LAYOUT_DEPTH the parser returns an error rather than recursing
+        // until the native stack overflows (an uncatchable process abort).
+        let mut nested = "2x2,0,0,0".to_string();
+        for _ in 0..(MAX_LAYOUT_DEPTH + 5) {
+            nested = format!("2x2,0,0{{{nested}}}");
+        }
+        assert!(Layout::parse(&nested).is_err());
     }
 }
