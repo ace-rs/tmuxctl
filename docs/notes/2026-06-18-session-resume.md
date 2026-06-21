@@ -2,26 +2,28 @@
 
 Breadcrumb for the next `/ace`. hangar-driven over `ace-connect`, autonomous slice loop
 (`/ace-afk` for unattended runs). Crate is published (v0.1.0) and feature-complete for the
-protocol layer; recent work (2026-06-21 afk) landed the **`select-layout` push helper** and the
-**`TARGET_TMUX` pin constant**, alongside heavy **hangar protocol support** over the bridge.
+protocol layer; recent work (2026-06-21 afk) landed the **`select-layout` push helper**
+alongside heavy **hangar protocol support**, then corrected a SHA-pinning mistake (the tmux
+target is identified by version + the `3.6b` release tag, never a commit SHA).
 
 ## Where it stands
 
 Crate `tmuxctl`, repo `ace-rs/tmuxctl` (public). **v0.1.0 live on crates.io** (tag `v0.1.0` +
-GitHub release). `gh/main` pushed through `5995543` (select-layout + its roadmap). **2 unpushed
-commits** ahead: `52f1f67` (`TARGET_TMUX` const + crate-status refresh) and `fe8556f` (its
-roadmap) — push next. **60 default+feature lib tests** + 2 `#[ignore]`d integration + 1
+GitHub release). `gh/main` pushed through `5bf2121`. The `52f1f67` commit kept its crate-`#
+Status` doc fix, but its `TARGET_TMUX`/`TARGET_TMUX_COMMIT` consts were **reverted** (SHA was the
+wrong identifier — see below). **60 default+feature lib tests** + 2 `#[ignore]`d integration + 1
 transcript, clippy `--all-features` + fmt + `cargo doc` all clean. Deps: `thiserror` (always) +
 optional `tokio`/`smol`. Cargo.toml still `0.1.0`.
 
-**Release stance:** 2 features accumulated since v0.1.0 (`select_layout`, `TARGET_TMUX`). Per
-chakrit's pre-v1 policy (new feature = patch bump), the next release is **0.1.1** — *held* to
-avoid spinning versions on two small features; cut it when more accumulates or hangar requests
+**Release stance:** 1 feature accumulated since v0.1.0 (`select_layout`; the `TARGET_TMUX` const
+was reverted). Per chakrit's pre-v1 policy (new feature = patch bump), the next release is
+**0.1.1** — *held* until worth it; cut it when more accumulates or hangar requests
 (hangar consumes tmuxctl as a sibling repo, so no urgent crates.io need). Flow: `cargo
 set-version 0.1.1` → commit → tag `v0.1.1` → `scripts/release.sh`.
 
-**Pinned target: tmux `3.6b` (`8f3f14f5`)** = `TARGET_TMUX` (decision only; not yet a code
-constant). See [the target ADR](../decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md).
+**Pinned target: tmux `3.6b`** — identified by version + the immutable `3.6b` release tag,
+**never a commit SHA** (opaque, needs tmux's full history, not what tmux reports). See
+[the target ADR](../decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md).
 
 - **Sans-IO core (pure, no runtime):** id newtypes; `decode_output(&[u8])`; `Layout`
   parse/render/checksum; line `Parser` (`&[u8]`; reply framing + control flag; full
@@ -31,7 +33,7 @@ constant). See [the target ADR](../decisions/2026-06-21-target-tmux-3.6b-floats-
 - **Three drivers, one core, feature-gated:** `Client` (`blocking`, default), `SmolClient`
   (`smol`), `TokioClient` (`tokio`) — async via per-task actor. Each: `spawn(SpawnOpts)` /
   `command` / `send_keys` / `resize` / `select_layout(WindowId, &Layout)` / events `Receiver` /
-  teardown. Shared `spawn` + `commands`. Crate-root `TARGET_TMUX`/`TARGET_TMUX_COMMIT` consts.
+  teardown. Shared `spawn` + `commands`.
 - **Test pyramid (Phase 5, mostly done):** units; transcript replay of a real 3.6b capture
   (`tests/fixtures/structural-session.txt`, asserts no-`Unknown`); injected-transport driver
   tests; host real-tmux integration (`tests/integration.rs` + `scripts/integration.sh`,
@@ -50,9 +52,13 @@ push, and cut release** (pre-v1 versioning: new feature = patch, breaking = mino
   (`7ecaf63`). Sends `to_layout_string()` (checksummed) form — `layout_parse` (layout-custom.c)
   **requires** the 4-hex checksum. No client-side validation: tmux arbitrates via `%error`.
   Loosened the `fake_tmux_expecting` test helper to take an owned `String`.
-- **Slice 2 — `TARGET_TMUX` const + crate-status refresh** (`52f1f67`): `pub const TARGET_TMUX
-  = "3.6b"` / `TARGET_TMUX_COMMIT = "8f3f14f5"` at the crate root; fixed the stale `# Status`
-  doc (claimed "Early"/"async Client next slice" though all drivers shipped + published).
+- **Slice 2 — crate-`# Status` doc fix** (`52f1f67`): fixed the stale `# Status` doc (claimed
+  "Early"/"async Client next slice" though all drivers shipped + published). The same commit
+  added `TARGET_TMUX`/`TARGET_TMUX_COMMIT` consts — **reverted** after chakrit's push-back: a
+  commit SHA is the wrong identifier (opaque, needs tmux's full history, not what tmux reports;
+  and the annotated tag's object SHA differs from the commit SHA — a footgun we hit), and the
+  const had no consumer. Pin lives in the ADR as version + tag; a runtime drift-check
+  (`#{version}` vs target) waits for Phase 5.
 - **hangar protocol support over the bridge (priority):** answered 3 question-sets, all
   source-verified, full detail in `/tmp/*-answer-tmuxctl.md` + folded into hangar's own docs:
   (1) `%output` bytes are raw PTY post-octal-decode, feed `vt100::process` direct; (2) an escape
@@ -69,21 +75,23 @@ push, and cut release** (pre-v1 versioning: new feature = patch, breaking = mino
 
 ## Next
 
-1. **Push** `52f1f67` + `fe8556f` to `gh/main` (afk grant covers it; held only pending this
-   save). Then consider **release 0.1.1** if the batch feels worth it (bump → tag → release.sh).
-2. **Phase 5 container — the main remaining unblocked planned work; pick up fresh** (this save
-   fired because context was heavy — don't start it bloated). Dockerfile building tmux **3.6b**
-   (`8f3f14f5`) for off-host integration repro, plus the fixture-generator loop. `docker build`
-   is borderline-but-OK under the afk envelope (local, reversible); writing the Dockerfile is
-   plainly fine.
+1. **Release 0.1.1?** — `select_layout` is the one shippable feature since v0.1.0; cut it when
+   worth it or on hangar request (`cargo set-version 0.1.1` → tag → `scripts/release.sh`). All
+   work pushed (`gh/main` @ the SHA-scrub commit).
+2. **Phase 5 container — the main remaining unblocked planned work; pick up fresh** (don't start
+   it in a bloated context). Dockerfile building tmux **3.6b** from the `3.6b` release tag/tarball
+   (**not a SHA**) for off-host integration repro, plus the fixture-generator loop. `docker
+   build` is borderline-but-OK under the afk envelope (local, reversible); writing the Dockerfile
+   is plainly fine.
 3. **Deferred until a consumer needs them** (Phase 3 defer-helpers stance): per-window resize
    (`refresh-client -C @<w>:WxH` — exact form verified this session), flow control
    (`pause-after` / `%p:continue`), `Client::tmux_version()` telemetry (`display-message -p
    '#{version}'`).
-4. **Blocked — source-map line-number re-anchor** `next-3.7` → 3.6b: needs the 3.6b source. The
-   local clone `~/Documents/chakrit/tmux` is at `3.7-rc-86`; read 3.6b blobs via `git show
-   8f3f14f5:control.c` etc. — **do not `checkout`** chakrit's clone (outside-tree mutation).
-   Algorithms/format strings hold; only line numbers + the `<…>` float section drift.
+4. **Unblocked — source-map line-number re-anchor** `next-3.7` → 3.6b: the local clone
+   `~/Documents/chakrit/tmux` is now **checked out at the `3.6b` tag** (chakrit's 1-time grant;
+   verify with `git -C … describe --tags` → `3.6b`). Re-anchor the source-map line numbers
+   against it. Algorithms/format strings already hold; only line numbers + the `<…>` float
+   section drift. (Restore with `git checkout master` in that clone when chakrit wants it back.)
 5. **Optional fix-slice (audit nit):** migrate `send_keys`/`resize` to `PaneId` Display for
    sigil consistency with `select_layout`. Low priority; both forms valid.
 

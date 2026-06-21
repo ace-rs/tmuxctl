@@ -21,17 +21,7 @@
 //! [`Layout::parse`]), the line [`Parser`], and the reply-correlation [`Engine`] —
 //! is complete and tested. Three feature-gated drivers wrap one core: `Client`
 //! (`blocking`), `SmolClient` (`smol`), and `TokioClient` (`tokio`). The protocol is
-//! ported against tmux [`TARGET_TMUX`].
-
-/// The tmux release this crate's protocol was ported against. Per the lock-step
-/// model (produce strictly, accept liberally), this exact tmux is the compatibility
-/// arbiter — see `docs/decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md`.
-/// Nothing here gates on it; consumers may compare a detected `#{version}` against it
-/// to warn on drift.
-pub const TARGET_TMUX: &str = "3.6b";
-
-/// The tmux source commit [`TARGET_TMUX`] resolves to (the `3.6b` tag).
-pub const TARGET_TMUX_COMMIT: &str = "8f3f14f5";
+//! ported against tmux 3.6b.
 
 mod engine;
 mod error;

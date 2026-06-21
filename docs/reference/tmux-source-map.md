@@ -6,9 +6,9 @@ pane-output escaping into the `tmuxctl` Rust crate. It records the real function
 names, exact format strings, and the verified algorithms — not a tutorial.
 
 - **tmux clone:** `/Users/chakrit/Documents/chakrit/tmux`
-- **Version (target):** `3.6b` — `TARGET_TMUX` = tag `8f3f14f5`, the pinned target (see
+- **Version (target):** `3.6b` — the `3.6b` release tag, the pinned target (see
   [the target ADR](../decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md)). The line
-  numbers below were captured against `next-3.7` (`3.7-rc-86-gc6b8ad6e`) and are **pending
+  numbers below were captured against `next-3.7` (`3.7-rc-86`) and are **pending
   re-anchoring to 3.6b**; the algorithms and format strings hold across both — only line numbers
   and the `<…>` float section drift.
 - **Spec cross-reference:** `docs/spec/overview.md` (the protocol spec this map feeds)

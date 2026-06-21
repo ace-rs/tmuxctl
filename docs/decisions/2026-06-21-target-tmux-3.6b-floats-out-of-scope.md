@@ -9,7 +9,7 @@
 
 The lock-step ADR fixed the *policy* — one pinned tmux, produce strictly / accept liberally,
 no version matrix — but left the *value* open. In practice the repo had drifted to `next-3.7`
-at `3.7-rc-86-gc6b8ad6e`: not a release, and 86 commits past even the 3.7 release candidate,
+at `3.7-rc-86`: not a release, and 86 commits past even the 3.7 release candidate,
 i.e. unfrozen `main`. Meanwhile the transcript fixtures and the integration test were already
 captured against the latest stable, **3.6b**. So the port reference (the source map) and the
 regression net disagreed on the target.
@@ -31,11 +31,14 @@ costs nothing forward.
 
 ## Decisions
 
-**Pin tmux 3.6b.** `TARGET_TMUX` = the `3.6b` release tag,
-`8f3f14f565d3dc2a1e7f8c37e0dc3d3499c70c97`. A *release* tag is immutable (unlike the `next-3.7`
-branch alias), so it satisfies the lock-step ADR's "pin a stable pointer, not a moving ref"
-intent; the SHA is recorded for precision. This resolves the lock-step open question and fixes
-the rc+86 drift. The source map, spec, and CLAUDE.md are re-anchored to 3.6b.
+**Pin tmux 3.6b — by version + release tag, never a commit SHA.** The target is the `3.6b`
+release: the version string `tmux -V`/`#{version}` reports, and the immutable git tag `3.6b` of
+the same name (unlike the `next-3.7` branch alias, which moved under us). Identify it that way
+everywhere — builds pull the `tmux-3.6b` tag/tarball, references say "3.6b". **Do not hardcode
+the commit SHA** the tag resolves to: it is opaque (meaningless without tmux's full git
+history), is not what tmux reports, and is a tag-object-vs-commit footgun. This resolves the
+lock-step open question and fixes the rc+86 drift. The source map, spec, and CLAUDE.md are
+re-anchored to 3.6b.
 
 **Native floating panes are deferred — for now, not forever.** 3.6b has no floats, so the
 tiled-only `Layout` (no `<…>` parse/render) is *correct for the current target*, not a permanent

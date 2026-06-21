@@ -57,8 +57,9 @@ One target, one fixture set — never a matrix.
 
 ## Open questions
 
-- The exact pin mechanism in-repo (a `TARGET_TMUX` constant + the SHA) — settled when the
-  integration harness lands (see the container test-strategy ADR). **Value resolved
-  (2026-06-21):** the pinned target is tmux `3.6b` (`8f3f14f5`) — see
+- The exact pin mechanism in-repo — settled when the integration harness lands (see the
+  container test-strategy ADR). **Resolved (2026-06-21):** pin to the `3.6b` release (version +
+  git tag, **not** a commit SHA); a runtime drift-check (`#{version}` vs the target) lands with
+  the integration harness, not before. See
   [the target ADR](2026-06-21-target-tmux-3.6b-floats-out-of-scope.md).
 - Whether to expose `Client::tmux_version()` now or when a consumer needs it.

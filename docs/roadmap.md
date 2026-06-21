@@ -151,15 +151,15 @@ Thin, typed wrappers over a raw `command(&str)` escape hatch (which stays primar
 ## Phase 4 — Version guard + pin (collapsed)
 
 Per [the lock-step ADR](decisions/2026-06-18-lock-step-tmux-and-robustness.md), there is **no
-version-gating**: target one pinned tmux (commit SHA), produce strictly, accept liberally,
-let tmux be the compat arbiter. **Pinned target resolved (2026-06-21): `TARGET_TMUX` = tmux
-`3.6b` / `8f3f14f5`** (see
-[the target ADR](decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md)). This phase is
-now just: surface that ref as a constant + expose detected version as telemetry. No per-version
-branches. **DONE (`52f1f67`):** crate-root `TARGET_TMUX` / `TARGET_TMUX_COMMIT` consts.
-**Deferred:** detected-version telemetry (a `tmux_version()` helper) until a consumer needs it.
-**Follow-up fix-slice:** re-anchor the source map's line numbers from `next-3.7` to 3.6b
-(algorithms/format strings hold; only line numbers + the `<…>` float section drift).
+version-gating**: target one pinned tmux (by version + release tag, **not** a commit SHA),
+produce strictly, accept liberally, let tmux be the compat arbiter. **Pinned target resolved
+(2026-06-21): tmux `3.6b`** (the `3.6b` release tag — see
+[the target ADR](decisions/2026-06-21-target-tmux-3.6b-floats-out-of-scope.md)). No per-version
+branches, no SHAs in code. A standalone `TARGET_TMUX` const was tried and reverted — it had no
+consumer and duplicated the ADR's pin; the pin re-enters code only as a runtime **drift-check**
+(`#{version}` vs the target) wired into the integration harness (Phase 5). **Follow-up
+fix-slice:** re-anchor the source map's line numbers from `next-3.7` to 3.6b (algorithms/format
+strings hold; only line numbers + the `<…>` float section drift).
 
 ## Phase 5 — Regression net & integration — MOSTLY DONE
 
