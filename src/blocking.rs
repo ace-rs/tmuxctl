@@ -8,7 +8,7 @@
 //! driver is testable over an in-memory pipe without spawning tmux.
 
 use std::collections::HashMap;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
@@ -185,15 +185,25 @@ fn read_loop(
     let mut buf = [0u8; 8192];
     loop {
         match reader.read(&mut buf) {
-            Ok(0) | Err(_) => break,
+            Ok(0) => break,
             Ok(n) => dispatch(shared, events, &buf[..n]),
+            // A signal can interrupt a read mid-syscall; retry rather than mistake it
+            // for EOF and tear down a session whose peer is still alive.
+            Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+            Err(_) => break,
         }
     }
     disconnect(shared);
 }
 
 fn dispatch(shared: &Arc<Mutex<Shared>>, events: &Sender<Notification>, bytes: &[u8]) {
-    let mut shared = shared.lock().expect("driver mutex poisoned");
+    // Recover a poisoned lock rather than panic: the reader thread must keep draining
+    // replies and still reach the EOF drain in `disconnect` even if a caller panicked
+    // mid-`command`, or blocked waiters would hang forever. Matches `command`'s graceful
+    // poison handling — degrade, don't amplify.
+    let mut shared = shared
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     for incoming in shared.engine.feed(bytes) {
         match incoming {
             Incoming::Notification(notification) => {
@@ -205,7 +215,9 @@ fn dispatch(shared: &Arc<Mutex<Shared>>, events: &Sender<Notification>, bytes: &
 }
 
 fn disconnect(shared: &Arc<Mutex<Shared>>) {
-    let mut shared = shared.lock().expect("driver mutex poisoned");
+    let mut shared = shared
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     shared.connected = false;
     for incoming in shared.engine.on_eof() {
         if let Incoming::Reply { id, result } = incoming {
@@ -351,6 +363,39 @@ mod tests {
         drop(tmux); // peer gone → reader EOF → thread ends → events sender dropped
 
         assert!(events.recv().is_err());
+    }
+
+    #[test]
+    fn read_interrupted_is_retried_not_disconnected() {
+        // A signal-interrupted read must not be mistaken for EOF: the session keeps
+        // running and the notification on the next read still arrives.
+        struct InterruptThenData {
+            calls: usize,
+        }
+        impl Read for InterruptThenData {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                self.calls += 1;
+                match self.calls {
+                    1 => Err(std::io::Error::from(std::io::ErrorKind::Interrupted)),
+                    2 => {
+                        let data = b"%window-add @7\n";
+                        buf[..data.len()].copy_from_slice(data);
+                        Ok(data.len())
+                    }
+                    _ => Ok(0),
+                }
+            }
+        }
+
+        let mut client = Client::with_transport(
+            Box::new(InterruptThenData { calls: 0 }),
+            Box::new(std::io::sink()),
+        );
+        let events = client.events().expect("events receiver");
+        assert_eq!(
+            events.recv().expect("recv"),
+            Notification::WindowAdd(WindowId(7))
+        );
     }
 
     #[test]
