@@ -144,7 +144,7 @@ Thin, typed wrappers over a raw `command(&str)` escape hatch (which stays primar
   -C <cols>x<rows>`).
 - **DONE (`7ecaf63`):** `select_layout` (`select-layout -t @<w>` with a regenerated checksum
   via `to_layout_string()`) on all three drivers; tmux arbitrates validity (`%error`).
-- **DONE (hangar ASK, per-window control-mode sizing):** `resize_window` (`refresh-client -C
+- **DONE (`a5b1f77`, hangar ASK):** `resize_window` (`refresh-client -C
   @<w>:<cols>x<rows>`, the `@%u:%ux%u` form at cmd-refresh-client.c:90) on all three drivers;
   layers over the global `resize`, tmux bounds-checks (`%error`).
 - Open: flow control (`refresh-client -f pause-after=`, `-A '%p:continue'`).
