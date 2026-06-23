@@ -144,6 +144,19 @@ impl Client {
         self.command(&commands::resize(cols, rows)).map(drop)
     }
 
+    /// Override one window's size for this control client, layered over the global
+    /// [`Client::resize`]. tmux arbitrates bounds; an out-of-range size surfaces as
+    /// [`CommandError::Failed`], not a client-side check.
+    pub fn resize_window(
+        &self,
+        window: WindowId,
+        cols: u16,
+        rows: u16,
+    ) -> Result<(), CommandError> {
+        self.command(&commands::resize_window(window, cols, rows))
+            .map(drop)
+    }
+
     /// Push a layout onto a window. tmux arbitrates validity; a rejected layout
     /// surfaces as [`CommandError::Failed`], not a client-side check.
     pub fn select_layout(&self, window: WindowId, layout: &Layout) -> Result<(), CommandError> {
@@ -331,6 +344,24 @@ mod tests {
 
         let fake = fake_tmux_expecting(tmux.try_clone().expect("clone"), "refresh-client -C 80x24");
         client.resize(80, 24).expect("resize");
+
+        fake.join().expect("fake tmux");
+        drop(tmux);
+    }
+
+    #[test]
+    fn resize_window_emits_window_size_override() {
+        let (tmux, client_io) = UnixStream::pair().expect("socket pair");
+        let (reader, writer) = client_over(client_io);
+        let client = Client::with_transport(reader, writer);
+
+        let fake = fake_tmux_expecting(
+            tmux.try_clone().expect("clone"),
+            "refresh-client -C @2:80x24",
+        );
+        client
+            .resize_window(WindowId(2), 80, 24)
+            .expect("resize_window");
 
         fake.join().expect("fake tmux");
         drop(tmux);

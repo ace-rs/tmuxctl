@@ -184,6 +184,7 @@ impl Client {
     // typed helpers over `command`:
     pub fn send_keys(&self, pane: PaneId, keys: &[u8]) -> Result<(), CommandError>;
     pub fn resize(&self, cols: u16, rows: u16) -> Result<(), CommandError>;
+    pub fn resize_window(&self, window: WindowId, cols: u16, rows: u16) -> Result<(), CommandError>;
 }
 
 // Async drivers mirror `Client` with `async fn`: `SmolClient` (preferred) / `TokioClient`.

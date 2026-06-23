@@ -21,6 +21,14 @@ pub(crate) fn resize(cols: u16, rows: u16) -> String {
     format!("refresh-client -C {cols}x{rows}")
 }
 
+/// `refresh-client -C @<window>:<cols>x<rows>` — override one window's size for this
+/// control client, layered over the global [`resize`]. tmux bounds-checks against
+/// `WINDOW_MINIMUM..=WINDOW_MAXIMUM`; an out-of-range size comes back as `%error`, so
+/// validity is tmux's call, not a client-side check (parity with `resize`).
+pub(crate) fn resize_window(window: WindowId, cols: u16, rows: u16) -> String {
+    format!("refresh-client -C {window}:{cols}x{rows}")
+}
+
 /// `select-layout -t @<window> <layout-string>` — push a layout onto a window.
 ///
 /// Sends the checksummed `to_layout_string()` form: tmux's `layout_parse` rejects a
@@ -35,6 +43,15 @@ mod tests {
     use super::*;
     use crate::ids::WindowId;
     use crate::layout::Layout;
+
+    #[test]
+    fn resize_window_targets_window_with_size_override() {
+        // `@%u:%ux%u` on the wire: window id via the `@` sigil, then `<cols>x<rows>`.
+        assert_eq!(
+            resize_window(WindowId(2), 80, 24),
+            "refresh-client -C @2:80x24"
+        );
+    }
 
     #[test]
     fn select_layout_targets_window_with_checksummed_string() {

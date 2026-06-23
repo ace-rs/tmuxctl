@@ -26,7 +26,8 @@ and `smol` behind optional features):
 
 Next (all unblocked unless noted): the **pinned-tmux container** for reproducible integration
 (the one remaining Phase 5 gap); the **`TARGET_TMUX` constant + version telemetry** (Phase 4);
-**more typed command helpers** — layout push, flow control, per-window resize (Phase 3).
+**more typed command helpers** — flow control, subscriptions (Phase 3; layout push and
+per-window resize have landed).
 
 ## Audit 1 — fix-slices (2026-06-18)
 
@@ -143,8 +144,10 @@ Thin, typed wrappers over a raw `command(&str)` escape hatch (which stays primar
   -C <cols>x<rows>`).
 - **DONE (`7ecaf63`):** `select_layout` (`select-layout -t @<w>` with a regenerated checksum
   via `to_layout_string()`) on all three drivers; tmux arbitrates validity (`%error`).
-- Open: per-window resize (`refresh-client -C @<w>:<wxh>`); flow control (`refresh-client -f
-  pause-after=`, `-A '%p:continue'`).
+- **DONE (hangar ASK, per-window control-mode sizing):** `resize_window` (`refresh-client -C
+  @<w>:<cols>x<rows>`, the `@%u:%ux%u` form at cmd-refresh-client.c:90) on all three drivers;
+  layers over the global `resize`, tmux bounds-checks (`%error`).
+- Open: flow control (`refresh-client -f pause-after=`, `-A '%p:continue'`).
 - Open question: how much command surface to type vs. leaving raw primary — typed the two
   high-use ones, defer the rest.
 
@@ -204,5 +207,6 @@ Phases 0 → 1 → 2 → 6 are **DONE** (notification coverage, runtime decision
 published v0.1.0); Phase 5 is **mostly done** (pyramid built, container pending). Remaining, in
 rough priority: finish **Phase 5** (pinned-tmux container) and **Phase 4** (`TARGET_TMUX`
 constant + version telemetry) to make the lock-step net reproducible, then **Phase 3** typed
-helpers (layout push, flow control, per-window resize) as consumers need them, then the
+helpers (flow control, subscriptions — layout push and per-window resize landed) as consumers
+need them, then the
 **utilities** layer. None of the remaining work blocks the rest.
