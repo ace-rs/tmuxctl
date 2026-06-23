@@ -91,6 +91,8 @@ impl Layout {
 
         match self {
             Layout::Leaf { pane, .. } => {
+                // Bare id, not `PaneId` Display: layout strings carry no `%` sigil, so the
+                // `.0` is required — `{pane}` would emit `%N` and corrupt the layout.
                 let _ = write!(out, ",{}", pane.0);
             }
             Layout::SplitH { children, .. } => write_children(out, children, '{', '}'),

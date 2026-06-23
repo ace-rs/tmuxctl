@@ -9,7 +9,7 @@ use crate::layout::Layout;
 /// `send-keys -t %<pane> -H <hex> …` — inject raw bytes as hex byte values (`-H`),
 /// the safe path for arbitrary bytes and control sequences (no key-name lookup).
 pub(crate) fn send_keys(pane: PaneId, keys: &[u8]) -> String {
-    let mut cmd = format!("send-keys -t %{} -H", pane.0);
+    let mut cmd = format!("send-keys -t {pane} -H");
     for byte in keys {
         cmd.push_str(&format!(" {byte:02x}"));
     }
