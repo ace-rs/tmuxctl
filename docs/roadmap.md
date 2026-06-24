@@ -148,8 +148,14 @@ Thin, typed wrappers over a raw `command(&str)` escape hatch (which stays primar
   @<w>:<cols>x<rows>`, the `@%u:%ux%u` form at cmd-refresh-client.c:90) on all three drivers;
   layers over the global `resize`, tmux bounds-checks (`%error`).
 - Open: flow control (`refresh-client -f pause-after=`, `-A '%p:continue'`).
-- Open question: how much command surface to type vs. leaving raw primary — typed the two
-  high-use ones, defer the rest.
+- **Settled (2026-06-24): demand-driven, not blanket coverage.** Raw `command(&str)` is the
+  *exhaustive* surface — every tmux command goes through it as a string. Typed helpers are
+  curated sugar for hot commands, added only when a live consumer (hangar) signals demand; a
+  typed wrapper buys ergonomics, not validation (tmux arbitrates every emit via `%error`
+  regardless). "Type all ~170 commands" was explicitly considered and rejected: per-version
+  flag drift × that surface is a maintenance sink for ~zero gain over raw. The crate earns its
+  keep on the *receive* (parse) side, not emit. If raw strings feel too stringly, the answer
+  is better-typed *primitives* (the sigil-aware id newtypes) — not a method per verb.
 
 ## Phase 4 — Version guard + pin (collapsed)
 
