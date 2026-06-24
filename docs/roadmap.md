@@ -144,9 +144,16 @@ Thin, typed wrappers over a raw `command(&str)` escape hatch (which stays primar
   -C <cols>x<rows>`).
 - **DONE (`7ecaf63`):** `select_layout` (`select-layout -t @<w>` with a regenerated checksum
   via `to_layout_string()`) on all three drivers; tmux arbitrates validity (`%error`).
-- **DONE (`a5b1f77`, hangar ASK):** `resize_window` (`refresh-client -C
-  @<w>:<cols>x<rows>`, the `@%u:%ux%u` form at cmd-refresh-client.c:90) on all three drivers;
-  layers over the global `resize`, tmux bounds-checks (`%error`).
+- **DONE (`a5b1f77`, hangar ASK):** `resize_window` on all three drivers; tmux bounds-checks
+  (`%error`). **Re-cut (hangar ASK, 2026-06-25):** now emits tmux's own `resize-window -t @<w>
+  -x <cols> -y <rows>` (`cmd-resize-window.c`), not the original `refresh-client -C
+  @<w>:<cols>x<rows>`. The latter is *per-client* and only clamps the window *down*
+  (`resize.c:222-244`); the arranger needs an authoritative size. `resize-window` latches the
+  window to a per-window `window-size=manual` option (`cmd-resize-window.c:109`), so the size
+  holds under any global `window-size` and survives every recalc, unarbitrated. Dropped the
+  `refresh-client -C @<w>:WxH` per-client-window form (no consumer; re-add with an honest name
+  if a multi-window-display client appears). Caveat: a manual size is still clamped down by any
+  `refresh-client -C @<w>:WxH` on the same window — don't mix the two layers.
 - Open: flow control (`refresh-client -f pause-after=`, `-A '%p:continue'`).
 - **Settled (2026-06-24): demand-driven, not blanket coverage.** Raw `command(&str)` is the
   *exhaustive* surface — every tmux command goes through it as a string. Typed helpers are

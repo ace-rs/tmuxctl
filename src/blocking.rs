@@ -144,9 +144,10 @@ impl Client {
         self.command(&commands::resize(cols, rows)).map(drop)
     }
 
-    /// Override one window's size for this control client, layered over the global
-    /// [`Client::resize`]. tmux arbitrates bounds; an out-of-range size surfaces as
-    /// [`CommandError::Failed`], not a client-side check.
+    /// Set one window's size authoritatively (tmux `resize-window`, `window-size=manual`):
+    /// the size holds regardless of the global `window-size` and is not arbitrated against
+    /// client sizes — distinct from [`Client::resize`]. tmux bounds-checks; an out-of-range
+    /// size surfaces as [`CommandError::Failed`], not a client-side check.
     pub fn resize_window(
         &self,
         window: WindowId,
@@ -357,7 +358,7 @@ mod tests {
 
         let fake = fake_tmux_expecting(
             tmux.try_clone().expect("clone"),
-            "refresh-client -C @2:80x24",
+            "resize-window -t @2 -x 80 -y 24",
         );
         client
             .resize_window(WindowId(2), 80, 24)

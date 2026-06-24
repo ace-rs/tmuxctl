@@ -107,9 +107,10 @@ impl SmolClient {
         self.command(&commands::resize(cols, rows)).await.map(drop)
     }
 
-    /// Override one window's size for this control client, layered over the global
-    /// [`Client::resize`]. tmux arbitrates bounds; an out-of-range size surfaces as
-    /// [`CommandError::Failed`], not a client-side check.
+    /// Set one window's size authoritatively (tmux `resize-window`, `window-size=manual`):
+    /// the size holds regardless of the global `window-size` and is not arbitrated against
+    /// client sizes — distinct from [`Client::resize`]. tmux bounds-checks; an out-of-range
+    /// size surfaces as [`CommandError::Failed`], not a client-side check.
     pub async fn resize_window(
         &self,
         window: WindowId,

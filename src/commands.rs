@@ -21,12 +21,21 @@ pub(crate) fn resize(cols: u16, rows: u16) -> String {
     format!("refresh-client -C {cols}x{rows}")
 }
 
-/// `refresh-client -C @<window>:<cols>x<rows>` — override one window's size for this
-/// control client, layered over the global [`resize`]. tmux bounds-checks against
-/// `WINDOW_MINIMUM..=WINDOW_MAXIMUM`; an out-of-range size comes back as `%error`, so
-/// validity is tmux's call, not a client-side check (parity with `resize`).
+/// `resize-window -t @<window> -x <cols> -y <rows>` — set one window's size authoritatively.
+///
+/// This latches the window to `window-size=manual` (a per-window option on `w->options`,
+/// `cmd-resize-window.c:109`), so the size holds regardless of the global `window-size` and
+/// survives every later recalc — it is not arbitrated against client tty sizes. Distinct
+/// from [`resize`]'s `refresh-client -C`, which only sets *this client's* desired size and
+/// is clamped/arbitrated. tmux bounds-checks against `WINDOW_MINIMUM..=WINDOW_MAXIMUM`; an
+/// out-of-range size comes back as `%error`, so validity is tmux's call, not a client-side
+/// check (parity with `resize`).
+///
+/// Caveat: the manual size is still clamped *down* by any per-client per-window size a
+/// client has set via `refresh-client -C @<window>:WxH` (`resize.c:222-244`) — don't drive
+/// the same window through both layers.
 pub(crate) fn resize_window(window: WindowId, cols: u16, rows: u16) -> String {
-    format!("refresh-client -C {window}:{cols}x{rows}")
+    format!("resize-window -t {window} -x {cols} -y {rows}")
 }
 
 /// `select-layout -t @<window> <layout-string>` — push a layout onto a window.
@@ -46,10 +55,11 @@ mod tests {
 
     #[test]
     fn resize_window_targets_window_with_size_override() {
-        // `@%u:%ux%u` on the wire: window id via the `@` sigil, then `<cols>x<rows>`.
+        // tmux's own `resize-window`: window id via the `@` sigil on `-t`, size on `-x`/`-y`.
+        // Authoritative (window-size=manual), not the per-client `refresh-client -C` clamp.
         assert_eq!(
             resize_window(WindowId(2), 80, 24),
-            "refresh-client -C @2:80x24"
+            "resize-window -t @2 -x 80 -y 24"
         );
     }
 
